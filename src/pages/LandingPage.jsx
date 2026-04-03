@@ -38,19 +38,16 @@ const Typewriter = ({ strings, speed = 100, pauseBetween = 2000 }) => {
   return <span>{currentText}<span className="animate-pulse border-r-4 border-lime ml-1"></span></span>;
 };
 
-const FeatureCard = ({ icon: Icon, title, desc, tier, color = 'bg-white/5' }) => (
+const FeatureCard = ({ icon: Icon, title, desc }) => (
   <motion.div 
     whileHover={{ y: -10 }}
-    className={`${color} border border-white/10 p-8 rounded-2xl hover:border-lime/50 transition-all duration-300 group shadow-xl`}
+    className="bg-white/5 border border-white/10 p-8 rounded-2xl hover:border-lime/50 transition-all duration-300 group shadow-xl"
   >
-    <div className={`w-14 h-14 rounded-xl flex items-center justify-center mb-6 shadow-inner ring-1 ring-white/10 ${tier === 'FREE' ? 'bg-forest/50 text-lime' : 'bg-lime text-forest'}`}>
+    <div className="w-14 h-14 rounded-xl flex items-center justify-center mb-6 shadow-inner ring-1 ring-white/10 bg-forest/50 text-lime">
       <Icon size={28} className="group-hover:scale-110 transition-transform" />
     </div>
     <div className="flex items-center gap-2 mb-3">
       <h3 className="text-xl font-bold text-white">{title}</h3>
-      <span className={`text-[10px] font-black px-1.5 py-0.5 rounded ${tier === 'FREE' ? 'bg-forest border border-lime/30 text-lime' : 'bg-lime text-forest'}`}>
-        {tier}
-      </span>
     </div>
     <p className="text-offwhite/60 leading-relaxed text-sm mb-6">{desc}</p>
     <Link to="/features" className="flex items-center gap-2 text-lime font-bold text-sm hover:gap-3 transition-all">
@@ -97,7 +94,7 @@ const LandingPage = () => {
     { q: "What languages does nyAI support?", a: "nyAI supports over 50+ languages including Hindi, Tamil, Telugu, Marathi, Bengali, and even local dialects via mBart-50 integration." },
     { q: "How is my data kept private and secure?", a: "We use enterprise-grade encryption. Your case documents are never used for training our models unless you explicitly opt into our research program." },
     { q: "Can I use nyAI for court submissions?", a: "The documents generated are high-quality drafts. However, we recommend having them vetted by a lawyer through our marketplace before actual submission." },
-    { q: "How does the lawyer connect work?", a: "It works like Astrotalk. You pay per consultation or per minute to connect with verified lawyers vetted by our team." }
+    { q: "How does the lawyer connect work?", a: "It works like a direct marketplace. Connect with verified lawyers vetted by our team for instant legal consultation." }
   ];
 
   return (
@@ -308,40 +305,31 @@ const LandingPage = () => {
              icon={MessageCircle} 
              title="AI Legal Chatbot" 
              desc="Ask anything about Indian law, rights, or the constitution in your own language. Get instant clarity with citations." 
-             tier="FREE" 
           />
           <FeatureCard 
              icon={Search} 
              title="Legal Glossary" 
              desc="Decode complex legal jargon into plain, everyday English. Never be confused by 'legalese' again." 
-             tier="FREE" 
           />
           <FeatureCard 
              icon={Phone} 
              title="Emergency SOS" 
              desc="Connect to a verified lawyer instantly in crisis situations. One click away from expert legal help." 
-             tier="FREE" 
           />
           <FeatureCard 
              icon={FileCheck} 
              title="Document Analyzer" 
              desc="Upload any contract or legal notice. AI highlights risky clauses and hidden terms in seconds." 
-             tier="PRO" 
-             color="bg-forest/20"
           />
           <FeatureCard 
              icon={PlusCircle} 
              title="Doc Generator" 
              desc="Create rental agreements, rental notices, wills, and contracts automatically based on your state laws." 
-             tier="PRO" 
-             color="bg-forest/20"
           />
           <FeatureCard 
              icon={Brain} 
              title="Outcome Predictor" 
              desc="AI analyzes past case data from Indian courts to predict potential outcomes for your legal dispute." 
-             tier="PRO" 
-             color="bg-forest/20"
           />
         </div>
 
@@ -504,13 +492,13 @@ const LandingPage = () => {
           <h2 className="heading-display text-6xl md:text-8xl text-forest mb-12">Join the revolution <br/><span className="italic">of justice.</span></h2>
           <div className="flex flex-wrap justify-center gap-6">
             <Link to="/signup" className="text-offwhite bg-forest px-10 py-5 rounded-2xl font-black text-xl hover:scale-105 transition-transform shadow-2xl shadow-forest/40">
-              Start Your Free Plan
+              Get started for free
             </Link>
             <Link to="/about" className="text-forest border-2 border-forest/20 px-10 py-5 rounded-2xl font-black text-xl hover:bg-forest/5 transition-colors">
               Read Our Vision
             </Link>
           </div>
-          <p className="text-forest/60 font-medium mt-12">No credit card required. Cancel anytime.</p>
+          <p className="text-forest/60 font-medium mt-12">Empowering 1.4B Indians with AI-driven justice.</p>
         </div>
       </section>
     </div>
