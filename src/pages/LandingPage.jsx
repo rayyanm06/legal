@@ -38,7 +38,7 @@ const Typewriter = ({ strings, speed = 100, pauseBetween = 2000 }) => {
   return <span>{currentText}<span className="animate-pulse border-r-4 border-lime ml-1"></span></span>;
 };
 
-const FeatureCard = ({ icon: Icon, title, desc }) => (
+const FeatureCard = ({ icon: Icon, title, desc, to = "/chat" }) => (
   <motion.div 
     whileHover={{ y: -10 }}
     className="bg-white/5 border border-white/10 p-8 rounded-2xl hover:border-lime/50 transition-all duration-300 group shadow-xl"
@@ -50,8 +50,8 @@ const FeatureCard = ({ icon: Icon, title, desc }) => (
       <h3 className="text-xl font-bold text-white">{title}</h3>
     </div>
     <p className="text-offwhite/60 leading-relaxed text-sm mb-6">{desc}</p>
-    <Link to="/features" className="flex items-center gap-2 text-lime font-bold text-sm hover:gap-3 transition-all">
-      Learn More <ArrowRight size={16} />
+    <Link to={to} className="flex items-center gap-2 text-lime font-bold text-sm hover:gap-3 transition-all">
+      Launch Tool <ArrowRight size={16} />
     </Link>
   </motion.div>
 );
@@ -305,31 +305,37 @@ const LandingPage = () => {
              icon={MessageCircle} 
              title="AI Legal Chatbot" 
              desc="Ask anything about Indian law, rights, or the constitution in your own language. Get instant clarity with citations." 
+             to="/chat"
           />
           <FeatureCard 
              icon={Search} 
              title="Legal Glossary" 
              desc="Decode complex legal jargon into plain, everyday English. Never be confused by 'legalese' again." 
+             to="/chat"
           />
           <FeatureCard 
              icon={Phone} 
              title="Emergency SOS" 
              desc="Connect to a verified lawyer instantly in crisis situations. One click away from expert legal help." 
+             to="/lawyers"
           />
           <FeatureCard 
              icon={FileCheck} 
              title="Document Analyzer" 
              desc="Upload any contract or legal notice. AI highlights risky clauses and hidden terms in seconds." 
+             to="/documents"
           />
           <FeatureCard 
              icon={PlusCircle} 
              title="Doc Generator" 
              desc="Create rental agreements, rental notices, wills, and contracts automatically based on your state laws." 
+             to="/documents"
           />
           <FeatureCard 
              icon={Brain} 
              title="Outcome Predictor" 
              desc="AI analyzes past case data from Indian courts to predict potential outcomes for your legal dispute." 
+             to="/chat"
           />
         </div>
 

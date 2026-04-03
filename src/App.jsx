@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Routes, Route, Link, useLocation } from 'react-router-dom';
+import { Routes, Route, Link, useLocation, Navigate, useNavigate } from 'react-router-dom';
 import { motion, AnimatePresence } from 'framer-motion';
 import { Menu, X, Scale, Bell, Globe, ArrowRight, MessageCircle, FileText, Users, LayoutDashboard, CheckCircle2, AlertTriangle, ShieldCheck, Download, ExternalLink, Play, Search, PlusCircle, History, Settings, LogOut, Phone } from 'lucide-react';
 import LandingPage from './pages/LandingPage';
@@ -12,16 +12,14 @@ import AuthPage from './pages/AuthPage';
 import LegalLiteracyApp from './features/legal-literacy';
 
 // Navbar Component
-const Navbar = () => {
+const Navbar = ({ isLoggedIn, onLogout }) => {
   const [isScrolled, setIsScrolled] = useState(false);
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const location = useLocation();
-  const isLearnPage = location.pathname === '/learn';
-  const isChatPage = location.pathname === '/chat';
   const isAboutPage = location.pathname === '/about';
   const isLawyersPage = location.pathname === '/lawyers';
-  const isDashboardPage = location.pathname === '/dashboard';
-  const isDocumentsPage = location.pathname === '/documents';
+  const isLearnPage = location.pathname === '/learn';
+  const isChatPage = location.pathname === '/chat';
 
   // Landing routes (Public)
   const isLandingSection = ['/', '/about', '/login', '/signup'].includes(location.pathname);
@@ -52,13 +50,7 @@ const Navbar = () => {
   const navLinks = isProductSection ? productLinks : landingLinks;
 
   // Navbar Styling Logic
-  // Show dark background if:
-  // 1. We are on a product page
-  // 2. We are on the About/Lawyers page (regardless of scroll)
-  // 3. We have scrolled down on the landing page
   const navDark = isProductSection || isAboutPage || isLawyersPage || isScrolled;
-  
-  // Auto-hide Navbar only on LexArena when scrolled
   const hideNav = false; // Always visible as per request
 
   return (
@@ -94,11 +86,17 @@ const Navbar = () => {
               {link.name}
             </Link>
           ))}
+          {isLoggedIn && !isProductSection && (
+            <Link to="/chat" className="text-offwhite/80 hover:text-lime transition-colors font-medium">
+              Dashboard
+            </Link>
+          )}
         </div>
 
         <div className="hidden md:flex items-center gap-4">
           <button className="text-offwhite hover:text-white font-medium p-2"><Globe size={20} /></button>
-          {isLandingSection && (
+          
+          {!isLoggedIn && (
             <>
               <Link to="/login" className="text-offwhite hover:text-white font-medium px-4">Login</Link>
               <Link to="/signup" className="bg-lime hover:bg-lime-hover text-forest font-bold px-6 py-2.5 rounded-lg transition-all shadow-md">
@@ -106,10 +104,15 @@ const Navbar = () => {
               </Link>
             </>
           )}
-          {isProductSection && (
+
+          {isLoggedIn && (
             <div className="flex items-center gap-3 pl-4 border-l border-white/10">
-              <div className="w-8 h-8 rounded-full bg-lime flex items-center justify-center text-forest font-bold text-xs">YS</div>
-              <button className="text-offwhite/60 hover:text-white transition-colors">
+              <div className="w-8 h-8 rounded-full bg-lime flex items-center justify-center text-forest font-bold text-xs uppercase">YS</div>
+              <button 
+                onClick={onLogout}
+                className="text-offwhite/60 hover:text-white transition-colors"
+                title="Logout"
+              >
                 <LogOut size={18} />
               </button>
             </div>
@@ -151,17 +154,20 @@ const Navbar = () => {
                 {link.name}
               </Link>
             ))}
+            
             <div className="flex flex-col gap-4 pt-4 border-t border-white/10">
-              {isLandingSection && (
+              {isLoggedIn ? (
+                <button 
+                  onClick={() => { onLogout(); setMobileMenuOpen(false); }} 
+                  className="flex items-center gap-3 text-lime text-xl font-bold py-2"
+                >
+                  <LogOut size={20} /> Logout
+                </button>
+              ) : (
                 <>
                   <Link to="/login" onClick={() => setMobileMenuOpen(false)} className="text-offwhite text-lg font-medium">Login</Link>
                   <Link to="/signup" onClick={() => setMobileMenuOpen(false)} className="bg-lime text-forest font-bold px-6 py-3 rounded-lg text-center">Try for Free</Link>
                 </>
-              )}
-              {isProductSection && (
-                <button className="flex items-center gap-3 text-offwhite/60 py-2">
-                  <LogOut size={20} /> Logout
-                </button>
               )}
             </div>
           </motion.div>
@@ -340,29 +346,78 @@ const Footer = () => (
   </footer>
 );
 
+const ProtectedRoute = ({ children, isLoggedIn }) => {
+  if (!isLoggedIn) {
+    return <Navigate to="/login" replace />;
+  }
+  return children;
+};
+
 function App() {
+  const [isLoggedIn, setIsLoggedIn] = useState(false);
   const location = useLocation();
+  const navigate = useNavigate();
 
   useEffect(() => {
     window.scrollTo(0, 0);
   }, [location.pathname]);
+
+  const handleLogout = () => {
+    setIsLoggedIn(false);
+    navigate('/');
+  };
 
   const isAuthPage = location.pathname === '/login' || location.pathname === '/signup';
   const isChatPage = location.pathname === '/chat';
 
   return (
     <div className="min-h-screen bg-offwhite selection:bg-lime selection:text-forest">
-      {!isAuthPage && <Navbar />}
+      {!isAuthPage && <Navbar isLoggedIn={isLoggedIn} onLogout={handleLogout} />}
       <Routes>
         <Route path="/" element={<LandingPage />} />
-        <Route path="/chat" element={<ChatPage />} />
-        <Route path="/documents" element={<DocumentsPage />} />
-        <Route path="/lawyers" element={<LawyersPage />} />
-        <Route path="/dashboard" element={<DashboardPage />} />
+        <Route 
+          path="/chat" 
+          element={
+            <ProtectedRoute isLoggedIn={isLoggedIn}>
+              <ChatPage />
+            </ProtectedRoute>
+          } 
+        />
+        <Route 
+          path="/documents" 
+          element={
+            <ProtectedRoute isLoggedIn={isLoggedIn}>
+              <DocumentsPage />
+            </ProtectedRoute>
+          } 
+        />
+        <Route 
+          path="/lawyers" 
+          element={
+            <ProtectedRoute isLoggedIn={isLoggedIn}>
+              <LawyersPage />
+            </ProtectedRoute>
+          } 
+        />
+        <Route 
+          path="/dashboard" 
+          element={
+            <ProtectedRoute isLoggedIn={isLoggedIn}>
+              <DashboardPage />
+            </ProtectedRoute>
+          } 
+        />
         <Route path="/about" element={<AboutPage />} />
-        <Route path="/login" element={<AuthPage />} />
-        <Route path="/signup" element={<AuthPage />} />
-        <Route path="/learn" element={<LegalLiteracyApp />} />
+        <Route path="/login" element={<AuthPage setIsLoggedIn={setIsLoggedIn} />} />
+        <Route path="/signup" element={<AuthPage setIsLoggedIn={setIsLoggedIn} />} />
+        <Route 
+          path="/learn" 
+          element={
+            <ProtectedRoute isLoggedIn={isLoggedIn}>
+              <LegalLiteracyApp />
+            </ProtectedRoute>
+          } 
+        />
       </Routes>
       {!(isAuthPage || isChatPage) && <Footer />}
       {!(isAuthPage || isChatPage) && <SOSButton />}
