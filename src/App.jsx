@@ -266,9 +266,11 @@ function App() {
     window.scrollTo(0, 0);
   }, [location.pathname]);
 
+  const isAuthPage = location.pathname === '/login' || location.pathname === '/signup';
+
   return (
     <div className="min-h-screen bg-offwhite selection:bg-lime selection:text-forest">
-      <Navbar />
+      {!isAuthPage && <Navbar />}
       <Routes>
         <Route path="/" element={<LandingPage />} />
         <Route path="/chat" element={<ChatPage />} />
@@ -280,8 +282,8 @@ function App() {
         <Route path="/login" element={<AuthPage />} />
         <Route path="/signup" element={<AuthPage />} />
       </Routes>
-      <Footer />
-      <SOSButton />
+      {!isAuthPage && <Footer />}
+      {!isAuthPage && <SOSButton />}
     </div>
   );
 }
