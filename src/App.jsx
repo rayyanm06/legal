@@ -374,7 +374,7 @@ function App() {
     <div className="min-h-screen bg-offwhite selection:bg-lime selection:text-forest">
       {!isAuthPage && <Navbar isLoggedIn={isLoggedIn} onLogout={handleLogout} />}
       <Routes>
-        <Route path="/" element={<LandingPage />} />
+        <Route path="/" element={<LandingPage isLoggedIn={isLoggedIn} />} />
         <Route 
           path="/chat" 
           element={
