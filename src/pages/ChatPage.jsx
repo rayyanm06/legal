@@ -47,9 +47,9 @@ const LegalAssistant = () => {
   ];
 
   return (
-    <div className="flex flex-col h-full bg-white relative">
+    <div className="flex flex-col h-full bg-offwhite relative">
       {/* Top Bar */}
-      <div className="px-8 py-6 border-b border-gray-100 flex justify-between items-center bg-white/80 backdrop-blur-md sticky top-0 z-10">
+      <div className="px-8 py-6 border-b border-gray-100 flex justify-between items-center bg-offwhite/80 backdrop-blur-md sticky top-0 z-10">
         <div>
           <h2 className="text-3xl font-bold text-gray-900 heading-display lowercase tracking-tighter">Legal Assistant</h2>
           <p className="text-xs text-gray-400 italic mt-1 font-medium">Ask anything about Indian law</p>
@@ -98,7 +98,7 @@ const LegalAssistant = () => {
       </div>
 
       {/* Input Area */}
-      <div className="p-6 border-t border-gray-100 bg-white">
+      <div className="p-6 border-t border-gray-100 bg-offwhite">
         <div className="max-w-4xl mx-auto">
           <form onSubmit={handleSend} className="relative">
             <input 
@@ -626,15 +626,15 @@ const ChatPage = () => {
                   animate={{ height: 'auto', opacity: 1 }}
                   className="pl-12 pt-4 pb-4 flex flex-col gap-3"
                 >
-                  <p className="text-[9px] font-bold text-lime/40 uppercase tracking-widest flex items-center gap-1">
-                    <History size={10} /> Past Cases
+                  <p className="text-[11px] font-bold text-lime/60 uppercase tracking-widest flex items-center gap-1">
+                    <History size={12} /> Past Cases
                   </p>
                   {pastCases.map(c => (
-                    <button key={c} className="text-[10px] font-medium text-white/40 hover:text-white text-left transition-colors truncate">
+                    <button key={c} className="text-[12px] font-medium text-white/60 hover:text-white text-left transition-colors truncate">
                       • {c}
                     </button>
                   ))}
-                  <button className="mt-2 text-[10px] font-black text-lime uppercase tracking-widest py-2 px-3 border border-lime/20 rounded-full hover:bg-lime/10 transition-all inline-block w-max">
+                  <button className="mt-2 text-[11px] font-black text-lime uppercase tracking-widest py-2.5 px-4 border border-lime/30 rounded-full hover:bg-lime/10 transition-all inline-block w-max">
                     + New Case
                   </button>
                 </motion.div>
