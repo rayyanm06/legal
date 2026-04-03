@@ -22,7 +22,7 @@ const getProviders = () => ({
   OLLAMA: {
     url: "https://ollama.com/v1/chat/completions",
     model: "ministral-3:8b", // Efficient cloud model
-    key: "586892e0e436442d8189d26cf6106613.rlH-jUMVYKSshpRlqJ4O7OID"
+    key: process.env.OLLAMA_API_KEY
   },
   ANTHROPIC: {
     url: "https://api.anthropic.com/v1/messages",
@@ -277,7 +277,7 @@ app.post('/progress', (req, res) => {
   const { userId = 'guest', scenarioId, isCorrect } = req.body;
   initUser(userId);
   const user = users[userId];
-  
+
   if (!user.completedScenarios.includes(scenarioId)) {
     user.completedScenarios.push(scenarioId);
     user.totalAnswers += 1;
@@ -322,7 +322,7 @@ app.get('/progress/:userId', (req, res) => {
   let level = "Beginner";
   if (user.totalPoints >= 51 && user.totalPoints <= 150) level = "Aware";
   if (user.totalPoints > 150) level = "Advanced";
-  
+
   const providers = getProviders();
   const engine = providers.OLLAMA.key ? "Ollama Cloud" : (providers.OPENAI.key ? "OpenAI" : "None");
 
