@@ -48,9 +48,14 @@ const BADGE_META = {
 const ALL_BADGES = Object.keys(BADGE_META);
 
 export default function ProgressDashboard({ onGoQuiz }) {
-  const { points, level, badges, accuracy, completedScenarios, loading } = useProgress('guest');
+  const { points, level, badges, accuracy, completedScenarios, loading, refetch } = useProgress('guest');
   const animPts = useCountUp(points);
   const animAcc = useCountUp(accuracy);
+
+  // Ensure stats are fresh when returning to dashboard
+  useEffect(() => {
+    refetch();
+  }, []);
 
   if (loading) return (
     <div style={{ padding: '80px 20px', textAlign: 'center', fontFamily: "'Outfit',sans-serif", color: '#6b7280' }}>
@@ -93,8 +98,8 @@ export default function ProgressDashboard({ onGoQuiz }) {
 
         {/* ═══ STAT CARDS — compact 2×2 grid ═══ */}
         <div style={{
-          display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))',
-          gap: '16px', marginBottom: '28px', alignItems: 'start',
+          display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)',
+          gap: '16px', marginBottom: '28px', alignItems: 'stretch',
         }}>
           {/* Points */}
           <StatCard delay={0} borderColor="#a8e63d" icon="⚡" label="Total Points"
@@ -113,22 +118,23 @@ export default function ProgressDashboard({ onGoQuiz }) {
         </div>
 
         {/* ═══ QUICK ACTIONS ═══ */}
-        {completedScenarios.length === 0 && (
-          <div style={{
-            background: 'linear-gradient(135deg, #1a3a2a 0%, #2d5a42 100%)',
-            borderRadius: '14px', padding: '24px 28px',
-            display: 'flex', alignItems: 'center', justifyContent: 'space-between',
-            flexWrap: 'wrap', gap: '16px', marginBottom: '28px',
-            animation: 'lexCardIn 0.4s ease 300ms both',
-          }}>
-            <div>
-              <div style={{ color: '#a8e63d', fontWeight: 700, fontSize: '1rem', marginBottom: '4px', fontFamily: "'Syne',sans-serif" }}>
-                Ready to begin?
-              </div>
-              <div style={{ color: 'rgba(245,240,232,0.7)', fontSize: '0.85rem' }}>
-                Enter the Arena to test your legal knowledge and earn your first badge.
-              </div>
+        <div style={{
+          background: 'linear-gradient(135deg, #1a3a2a 0%, #2d5a42 100%)',
+          borderRadius: '14px', padding: '24px 28px',
+          display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+          flexWrap: 'wrap', gap: '16px', marginBottom: '28px',
+          animation: 'lexCardIn 0.4s ease 300ms both',
+        }}>
+          <div>
+            <div style={{ color: '#a8e63d', fontWeight: 700, fontSize: '1rem', marginBottom: '4px', fontFamily: "'Syne',sans-serif" }}>
+              {completedScenarios.length === 0 ? 'Ready to begin?' : 'Continue Training'}
             </div>
+            <div style={{ color: 'rgba(245,240,232,0.7)', fontSize: '0.85rem' }}>
+              {completedScenarios.length === 0 
+                ? 'Enter the Arena to test your legal knowledge and earn your first badge.'
+                : 'Re-enter the Arena to sharpen your legal skills and earn more points.'}
+            </div>
+          </div>
             <button onClick={onGoQuiz} style={{
               background: '#a8e63d', color: '#0D3B2E', padding: '10px 24px',
               borderRadius: '10px', fontWeight: 700, fontSize: '0.85rem',
@@ -142,7 +148,7 @@ export default function ProgressDashboard({ onGoQuiz }) {
               🎯 Start Quiz →
             </button>
           </div>
-        )}
+
 
         {/* ═══ LEGAL OATH ═══ */}
         <div style={{
