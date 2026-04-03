@@ -18,7 +18,7 @@ const css = `
     display:block; width:100%; padding:16px 18px; margin-bottom:12px;
     border-radius:12px; border:1px solid #1a3a2a20;
     background:#fff; color:#1a3a2a; cursor:pointer;
-    text-align:left; font-size:1rem; font-family:'Outfit',sans-serif;
+    text-align:left; font-size:1rem; font-family:'DM Sans', sans-serif;
     transition: all 0.2s ease;
   }
   .lex-opt-btn:not(:disabled):hover {
@@ -55,12 +55,12 @@ export default function QuestionCard({ scenario, onAnswer }) {
     return { opacity: 0.45, cursor: 'not-allowed' };
   };
 
-  const getIcon = (opt) => {
+  const getStatusText = (opt) => {
     if (!selected) return null;
     const isThisCorrect = opt.charAt(0) === scenario.correctOption.charAt(0);
     const isThisSelected = opt === selected;
-    if (isThisCorrect) return '✅ ';
-    if (isThisSelected && !isThisCorrect) return '❌ ';
+    if (isThisCorrect) return '[CORRECT] ';
+    if (isThisSelected && !isThisCorrect) return '[INCORRECT] ';
     return null;
   };
 
@@ -70,21 +70,22 @@ export default function QuestionCard({ scenario, onAnswer }) {
       <div style={{
         background: '#fff', borderRadius: '16px', padding: '28px',
         boxShadow: '0 2px 8px rgba(0,0,0,0.06)', maxWidth: '640px',
-        margin: '0 auto', fontFamily: "'Outfit',sans-serif",
+        margin: '0 auto', fontFamily: "'DM Sans', sans-serif",
         borderTop: `4px solid ${topColor}`,
         animation: isCorrectAnswer ? 'lexPulseGreen 0.4s ease' : 'none',
       }}>
         {/* Category pill */}
         <span style={{
           display: 'inline-block', background: '#1a3a2a', color: '#fff',
-          padding: '4px 14px', borderRadius: '999px', fontSize: '0.75rem',
-          fontWeight: 600, marginBottom: '14px', letterSpacing: '0.04em'
-        }}>⚖️ {scenario.category}</span>
+          padding: '4px 14px', borderRadius: '4px', fontSize: '0.7rem',
+          fontWeight: 700, marginBottom: '14px', letterSpacing: '0.05em',
+          textTransform: 'uppercase'
+        }}>{scenario.category}</span>
 
         <p style={{ fontSize: '1rem', lineHeight: 1.7, color: '#475569', margin: '0 0 18px' }}>
           {scenario.situation}
         </p>
-        <div style={{ fontSize: '1.15rem', fontWeight: 700, marginBottom: '24px', color: '#1a3a2a', fontFamily: "'Syne',sans-serif" }}>
+        <div style={{ fontSize: '1.4rem', fontWeight: 500, marginBottom: '24px', color: '#1a3a2a', fontFamily: "'Instrument Serif', serif" }}>
           {scenario.question}
         </div>
 
@@ -98,7 +99,7 @@ export default function QuestionCard({ scenario, onAnswer }) {
               onClick={() => handleSelect(opt)}
               disabled={!!selected}
             >
-              {getIcon(opt)}{opt}
+              {getStatusText(opt)}{opt}
             </button>
           ))}
         </div>
@@ -109,13 +110,15 @@ export default function QuestionCard({ scenario, onAnswer }) {
             marginTop: '20px', padding: '18px', background: '#fafff5',
             borderLeft: '4px solid #a8e63d', borderRadius: '8px',
             animation: 'lexSlideDown 0.4s ease', overflow: 'hidden',
-            fontFamily: "'Outfit',sans-serif", color: '#475569', lineHeight: 1.7,
+            fontFamily: "'DM Sans', sans-serif", color: '#475569', lineHeight: 1.7,
           }}>
-            <strong style={{ color: isCorrectAnswer ? '#16a34a' : '#dc2626' }}>
-              {isCorrectAnswer ? '✓ Correct! ' : '✗ Incorrect. '}
+            <strong style={{ color: isCorrectAnswer ? '#16a34a' : '#dc2626', textTransform: 'uppercase', fontSize: '0.8rem', letterSpacing: '0.05em' }}>
+              {isCorrectAnswer ? 'Correct Judgement ' : 'Incorrect Judgement '}
             </strong>
-            <span style={{ color: '#6b7280' }}>💡 Why this answer: </span>
-            {scenario.explanation}
+            <div style={{ marginTop: '8px', color: '#6b7280', fontSize: '0.9rem' }}>
+              <span style={{ fontWeight: 700 }}>Legal Reasoning: </span>
+              {scenario.explanation}
+            </div>
           </div>
         )}
       </div>
