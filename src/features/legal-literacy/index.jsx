@@ -86,14 +86,13 @@ const cssBlock = `
   }
 `;
 
-export default function LegalLiteracyApp() {
+export default function LegalLiteracyApp({ userEmail = 'guest' }) {
   const [activeTab, setActiveTab] = useState('dashboard');
-<<<<<<< HEAD
   const [scrolled, setScrolled] = useState(false);
   const [showOnboarding, setShowOnboarding] = useState(false);
   const [onboardStep, setOnboardStep] = useState(0);
 
-  useEffect(() => {
+  React.useEffect(() => {
     const handleScroll = () => setScrolled(window.scrollY > 50);
     window.addEventListener('scroll', handleScroll);
 
@@ -104,8 +103,6 @@ export default function LegalLiteracyApp() {
 
     return () => window.removeEventListener('scroll', handleScroll);
   }, []);
-=======
->>>>>>> main
 
   const finishOnboarding = () => {
     setShowOnboarding(false);
@@ -139,7 +136,6 @@ export default function LegalLiteracyApp() {
   return (
     <>
       <style>{cssBlock}</style>
-<<<<<<< HEAD
       
       {/* ─── ONBOARDING OVERLAY ─── */}
       {showOnboarding && (
@@ -216,10 +212,7 @@ export default function LegalLiteracyApp() {
         ?
       </button>
 
-      <div style={{ display: 'flex', flexDirection: 'column', minHeight: '100vh', paddingTop: '60px' }}>
-=======
       <div className="lex-layout" style={{ display: 'flex', minHeight: '100vh', paddingTop: '64px', background: '#F5F0E8' }}>
->>>>>>> main
 
         {/* Sidebar Nav */}
         <aside className="lex-sidebar">
@@ -256,10 +249,10 @@ export default function LegalLiteracyApp() {
 
         {/* Scrollable Content */}
         <main key={activeTab} className="lex-content-fade" style={{ flex: 1, padding: '20px', background: '#F5F0E8' }}>
-          {activeTab === 'dashboard' && <ProgressDashboard onGoQuiz={() => setActiveTab('quiz')} />}
-          {activeTab === 'quiz' && <QuizEngine onGoDashboard={() => setActiveTab('dashboard')} />}
-          {activeTab === 'scenarios' && <ScenarioPage onComplete={() => setActiveTab('dashboard')} />}
-          {activeTab === 'modules' && <ModuleList />}
+          {activeTab === 'dashboard' && <ProgressDashboard userEmail={userEmail} onGoQuiz={() => setActiveTab('quiz')} />}
+          {activeTab === 'quiz' && <QuizEngine userEmail={userEmail} onGoDashboard={() => setActiveTab('dashboard')} />}
+          {activeTab === 'scenarios' && <ScenarioPage userEmail={userEmail} onComplete={() => setActiveTab('dashboard')} />}
+          {activeTab === 'modules' && <ModuleList userEmail={userEmail} />}
         </main>
       </div>
     </>

@@ -4,6 +4,12 @@
 import 'dotenv/config';
 import express from 'express';
 import cors from 'cors';
+import fs from 'node:fs';
+import path from 'node:path';
+import { fileURLToPath } from 'node:url';
+
+const __dirname = path.dirname(fileURLToPath(import.meta.url));
+const USERS_FILE = path.join(__dirname, 'users.json');
 
 const app = express();
 app.use(cors());
@@ -30,8 +36,26 @@ const getProviders = () => ({
   }
 });
 
-// In-memory data store for user progress
-const users = {};
+// Load users from disk or init empty
+let users = {};
+try {
+  if (fs.existsSync(USERS_FILE)) {
+    users = JSON.parse(fs.readFileSync(USERS_FILE, 'utf8'));
+    console.log(`Loaded ${Object.keys(users).length} users from disk.`);
+  }
+} catch (e) {
+  console.error("Failed to load users.json:", e.message);
+  users = {};
+}
+
+// Helper to save users to disk
+const saveToDisk = () => {
+  try {
+    fs.writeFileSync(USERS_FILE, JSON.stringify(users, null, 2));
+  } catch (e) {
+    console.error("Failed to save users.json:", e.message);
+  }
+};
 
 // Static mock categories and scenarios
 let scenarios = [
@@ -107,6 +131,7 @@ const initUser = (userId) => {
       totalAnswers: 0,
       badges: []
     };
+    saveToDisk();
   }
 };
 
@@ -269,6 +294,7 @@ app.post('/progress', (req, res) => {
     if (user.completedScenarios.length >= 10 && !user.badges.includes("Legal Eagle")) {
       user.badges.push("Legal Eagle");
     }
+    saveToDisk();
   }
 
   let level = "Beginner";
