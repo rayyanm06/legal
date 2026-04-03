@@ -3,7 +3,11 @@
 
 import React, { useState, useEffect } from 'react';
 import QuestionCard from './QuestionCard';
+<<<<<<< HEAD
 import { askClaude, parseJSONResponse } from '../utils/aiService';
+=======
+import { scenarios as localScenarios } from '../data/scenarios';
+>>>>>>> main
 
 const API_BASE = "http://localhost:5000";
 
@@ -41,6 +45,7 @@ const TOPICS = [
 ];
 
 export default function QuizEngine({ onGoDashboard }) {
+<<<<<<< HEAD
   // Navigation & Preferences State
   const [view, setView] = useState('preferences'); // preferences, loading, quiz, done
   const [selectedTopics, setSelectedTopics] = useState([]);
@@ -50,10 +55,14 @@ export default function QuizEngine({ onGoDashboard }) {
 
   // Quiz State
   const [scenarios, setScenarios] = useState([]);
+=======
+  const [scenarios, setScenarios] = useState(localScenarios.slice(0, 5));
+>>>>>>> main
   const [currentIdx, setCurrentIdx] = useState(0);
   const [score, setScore] = useState(0);
   const [hasAnswered, setHasAnswered] = useState(false);
 
+<<<<<<< HEAD
   // AI Verdict State
   const [aiVerdict, setAiVerdict] = useState('');
   const [aiLoading, setAiLoading] = useState(false);
@@ -119,11 +128,26 @@ Do NOT repeat situations across questions.`;
       setView('error');
     }
   };
+=======
+  useEffect(() => {
+    fetch(`${API_BASE}/scenarios`)
+      .then(res => res.json())
+      .then(data => {
+        if (data && data.length > 0) {
+          setScenarios(data.slice(0, 5));
+        }
+      })
+      .catch(e => {
+        console.warn("Backend not reachable, using local scenarios:", e);
+      });
+  }, []);
+>>>>>>> main
 
   const handleAnswer = (isCorrect) => {
     setHasAnswered(true);
     if (isCorrect) setScore(s => s + 1);
     
+<<<<<<< HEAD
     // Track progress on backend
     fetch(`${API_BASE}/progress`, {
       method: "POST",
@@ -135,6 +159,14 @@ Do NOT repeat situations across questions.`;
         points: isCorrect ? 10 : 2 // Small bonus for trying
       })
     }).catch(e => console.error("Progress save failed:", e));
+=======
+    // Optional: Log progress to backend if available
+    fetch(`${API_BASE}/progress`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ userId: 'guest', scenarioId: scenarios[currentIdx].id, isCorrect })
+    }).catch(e => console.warn("Could not save progress to backend:", e));
+>>>>>>> main
   };
 
   const nextQuestion = () => {
@@ -150,6 +182,7 @@ Do NOT repeat situations across questions.`;
     setQuestionCount(5);
   };
 
+<<<<<<< HEAD
   /* ── FINAL VERDICT WITH AI FEEDBACK ── */
   useEffect(() => {
     if (view !== 'done' || scenarios.length === 0) return;
@@ -165,6 +198,9 @@ A user just completed a legal literacy quiz with these results:
 - Score: ${score} out of ${scenarios.length} correct
 - Topics attempted: ${categories}
 - Difficulty: ${difficulty}
+=======
+  if (scenarios.length === 0) return <div style={{ padding: '80px 20px', textAlign: 'center', fontFamily: "'DM Sans', sans-serif" }}>Loading quiz...</div>;
+>>>>>>> main
 
 Write a SHORT personalized message (under 80 words) that:
 1. Acknowledges their performance warmly (not generically)
@@ -300,30 +336,32 @@ Tone: like a friendly mentor, not a robot. Speak directly to them as "you".`;
     return (
       <>
         <style>{css}</style>
-        <div style={{ padding: '60px 20px', fontFamily: "'Outfit',sans-serif", animation: 'lexFadeIn 0.4s ease' }}>
+        <div style={{ padding: '60px 20px', fontFamily: "'DM Sans', sans-serif", animation: 'lexFadeIn 0.4s ease' }}>
           <div style={{
-            background: '#fff', borderRadius: '20px', padding: '48px 36px',
-            textAlign: 'center', maxWidth: '520px', margin: '0 auto',
-            boxShadow: '0 4px 20px rgba(0,0,0,0.08)',
-            borderTop: '4px solid #a8e63d',
+            background: '#fff', borderRadius: '24px', padding: '56px 40px',
+            textAlign: 'center', maxWidth: '560px', margin: '0 auto',
+            boxShadow: '0 12px 30px rgba(0,0,0,0.08)',
+            borderTop: '6px solid #a8e63d',
             ...(isPerfect ? { animation: 'lexGoldGlow 2s ease infinite' } : {})
           }}>
-            <div style={{ fontFamily: "'Syne',sans-serif", fontSize: '1.8rem', fontWeight: 800, color: '#1a3a2a', marginBottom: '8px' }}>
-              ⚖️ THE VERDICT IS IN
+            <div style={{ fontFamily: "'Instrument Serif', serif", fontSize: '2.8rem', fontWeight: 500, color: '#1a3a2a', marginBottom: '8px' }}>
+              THE VERDICT IS IN
             </div>
             {isPerfect && (
               <div style={{
                 display: 'inline-block', background: 'linear-gradient(135deg, #fbbf24, #f59e0b)',
-                color: '#fff', padding: '6px 20px', borderRadius: '999px',
-                fontWeight: 700, fontSize: '0.85rem', margin: '12px 0',
-              }}>🏆 Perfect Judgement!</div>
+                color: '#fff', padding: '8px 24px', borderRadius: '999px',
+                fontWeight: 700, fontSize: '0.9rem', margin: '16px 0',
+                textTransform: 'uppercase', letterSpacing: '0.05em'
+              }}>Perfect Judgement</div>
             )}
-            <div style={{ fontFamily: "'Syne',sans-serif", fontSize: '3.2rem', fontWeight: 800, color: '#1a3a2a', margin: '20px 0 8px' }}>
+            <div style={{ fontFamily: "'Instrument Serif', serif", fontSize: '4rem', fontWeight: 500, color: '#1a3a2a', margin: '24px 0 12px' }}>
               {score} / {scenarios.length}
             </div>
-            <p style={{ color: '#6b7280', marginBottom: '6px' }}>You ruled on {score} of {scenarios.length} cases correctly</p>
-            <p style={{ color: '#1a3a2a', fontWeight: 600 }}>+{score * 10} points added to your dossier</p>
+            <p style={{ color: '#64748b', marginBottom: '8px', fontSize: '1.1rem' }}>You ruled on {score} of {scenarios.length} cases correctly</p>
+            <p style={{ color: '#1a3a2a', fontWeight: 700, fontSize: '1rem', textTransform: 'uppercase', letterSpacing: '0.05em' }}>+{score * 10} points added to dossier</p>
 
+<<<<<<< HEAD
             <div style={{
               marginTop: '24px', padding: '20px', background: '#f8fafc',
               borderRadius: '12px', border: '1px solid #e2e8f0', textAlign: 'left'
@@ -358,8 +396,13 @@ Tone: like a friendly mentor, not a robot. Speak directly to them as "you".`;
             <div style={{ marginTop: '32px', display: 'flex', justifyContent: 'center', gap: '12px', flexWrap: 'wrap' }}>
               <button onClick={resetQuiz} style={{ padding: '12px 28px', background: '#a8e63d', color: '#0D3B2E', border: 'none', borderRadius: '10px', fontWeight: 700, cursor: 'pointer', fontSize: '0.95rem' }}>
                 New Quiz
+=======
+            <div style={{ marginTop: '40px', display: 'flex', justifyContent: 'center', gap: '16px', flexWrap: 'wrap' }}>
+              <button onClick={resetQuiz} style={{ padding: '14px 32px', background: '#a8e63d', color: '#0D3B2E', border: 'none', borderRadius: '12px', fontWeight: 700, cursor: 'pointer', fontSize: '1rem', fontFamily: "'DM Sans', sans-serif", transition: 'all 0.2s ease' }} onMouseEnter={e => e.currentTarget.style.transform = 'translateY(-2px)'} onMouseLeave={e => e.currentTarget.style.transform = 'none'}>
+                Retry Quiz
+>>>>>>> main
               </button>
-              <button onClick={onGoDashboard} style={{ padding: '12px 28px', background: '#1a3a2a', color: '#f5f0e8', border: 'none', borderRadius: '10px', fontWeight: 700, cursor: 'pointer', fontSize: '0.95rem' }}>
+              <button onClick={onGoDashboard} style={{ padding: '14px 32px', background: '#1a3a2a', color: '#f5f0e8', border: 'none', borderRadius: '12px', fontWeight: 700, cursor: 'pointer', fontSize: '1rem', fontFamily: "'DM Sans', sans-serif", transition: 'all 0.2s ease' }} onMouseEnter={e => e.currentTarget.style.transform = 'translateY(-2px)'} onMouseLeave={e => e.currentTarget.style.transform = 'none'}>
                 Go to Profile
               </button>
             </div>
@@ -375,6 +418,7 @@ Tone: like a friendly mentor, not a robot. Speak directly to them as "you".`;
   return (
     <>
       <style>{css}</style>
+<<<<<<< HEAD
       <div style={{ padding: '40px 20px', fontFamily: "'Outfit',sans-serif" }}>
         <div style={{ maxWidth: '640px', margin: '0 auto 28px' }}>
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '10px' }}>
@@ -392,10 +436,18 @@ Tone: like a friendly mentor, not a robot. Speak directly to them as "you".`;
               <span>Question {currentIdx + 1} of {scenarios.length}</span>
               <span>Score: {score}</span>
             </div>
+=======
+      <div style={{ padding: '40px 20px', fontFamily: "'DM Sans', sans-serif" }}>
+        {/* Header + Progress bar */}
+        <div style={{ maxWidth: '640px', margin: '0 auto 32px' }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', fontWeight: 700, marginBottom: '12px', color: '#1a3a2a', fontSize: '0.9rem', textTransform: 'uppercase', letterSpacing: '0.05em' }}>
+            <span>Question {currentIdx + 1} of {scenarios.length}</span>
+            <span>Score: {score}</span>
+>>>>>>> main
           </div>
-          <div style={{ height: '6px', background: '#e5e7eb', borderRadius: '3px', overflow: 'hidden' }}>
+          <div style={{ height: '8px', background: '#e2e8f0', borderRadius: '4px', overflow: 'hidden' }}>
             <div style={{
-              height: '100%', borderRadius: '3px',
+              height: '100%', borderRadius: '4px',
               background: 'linear-gradient(90deg, #a8e63d, #4a9e6b)',
               width: `${progress}%`, transition: 'width 0.4s ease',
             }} />
@@ -405,14 +457,16 @@ Tone: like a friendly mentor, not a robot. Speak directly to them as "you".`;
         <QuestionCard key={currentIdx} scenario={scenarios[currentIdx]} onAnswer={handleAnswer} />
 
         {hasAnswered && (
-          <div style={{ textAlign: 'center', marginTop: '28px' }}>
+          <div style={{ textAlign: 'center', marginTop: '32px' }}>
             <button onClick={nextQuestion} style={{
-              padding: '12px 32px', background: '#a8e63d', color: '#0D3B2E',
-              border: 'none', borderRadius: '10px', fontWeight: 700,
+              padding: '14px 40px', background: '#a8e63d', color: '#0D3B2E',
+              border: 'none', borderRadius: '12px', fontWeight: 700,
               cursor: 'pointer', fontSize: '1rem',
-              boxShadow: '0 4px 12px rgba(168,230,61,0.3)',
-            }}>
-              {currentIdx + 1 === scenarios.length ? 'See Verdict ⚖️' : 'Next Question →'}
+              boxShadow: '0 8px 24px rgba(168,230,61,0.25)',
+              fontFamily: "'DM Sans', sans-serif",
+              transition: 'all 0.2s ease'
+            }} onMouseEnter={e => e.currentTarget.style.transform = 'translateY(-2px)'} onMouseLeave={e => e.currentTarget.style.transform = 'none'}>
+              {currentIdx + 1 === scenarios.length ? 'See Verdict' : 'Next Question'}
             </button>
           </div>
         )}

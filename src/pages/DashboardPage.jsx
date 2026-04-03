@@ -57,14 +57,6 @@ const DashboardPage = () => {
             </nav>
          </div>
 
-         <div className="mt-auto p-8">
-            <div className="bg-lime/10 border border-lime/20 p-6 rounded-[2rem] relative overflow-hidden">
-               <p className="text-[10px] font-black text-lime uppercase tracking-widest mb-2 relative z-10 italic">Case Predictor</p>
-               <h5 className="text-sm font-bold text-forest mb-4 relative z-10 leading-tight">Predict litigation outcomes using Indian Precedents.</h5>
-               <button className="bg-forest text-lime w-full py-3 rounded-xl text-xs font-black uppercase tracking-widest relative z-10 shadow-lg shadow-forest/10 hover:scale-105 transition-all">Enable Beta Access</button>
-               <Sparkles size={60} className="absolute -bottom-4 -right-4 text-lime/10" />
-            </div>
-         </div>
       </aside>
 
       {/* Main Content */}

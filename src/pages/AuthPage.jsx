@@ -6,7 +6,7 @@ import {
 } from 'lucide-react';
 import { Link, useNavigate } from 'react-router-dom';
 
-const AuthPage = () => {
+const AuthPage = ({ setIsLoggedIn }) => {
   const [isLogin, setIsLogin] = useState(true);
   const [isLoading, setIsLoading] = useState(false);
   const navigate = useNavigate();
@@ -17,7 +17,8 @@ const AuthPage = () => {
     // Simulate auth
     setTimeout(() => {
       setIsLoading(false);
-      navigate('/dashboard');
+      setIsLoggedIn(true);
+      navigate('/chat');
     }, 1500);
   };
 
@@ -30,7 +31,7 @@ const AuthPage = () => {
                <div className="bg-lime p-3 rounded-2xl group-hover:rotate-12 transition-transform">
                   <Scale size={32} className="text-forest" />
                </div>
-               <span className="text-4xl font-black text-white tracking-tighter uppercase">ny<span className="text-lime">AI</span></span>
+               <span className="text-4xl font-black text-white tracking-tighter">ny<span className="text-lime">AI</span></span>
             </Link>
 
             <h1 className="text-5xl lg:text-8xl font-black text-white heading-display lowercase tracking-tighter mb-12 leading-[0.9]">the future <br/><span className="text-lime italic underline decoration-lime/20 decoration-8 underline-offset-8">of justice.</span></h1>

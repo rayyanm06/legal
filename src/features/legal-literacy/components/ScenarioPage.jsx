@@ -3,11 +3,13 @@
 
 import React, { useState, useEffect } from 'react';
 import QuestionCard from './QuestionCard';
+<<<<<<< HEAD
 import { askClaude, parseJSONResponse } from '../utils/aiService';
+=======
+import { scenarios as localScenarios } from '../data/scenarios';
+>>>>>>> main
 
 const API_BASE = "http://localhost:5000";
-// MULTILINGUAL HOOK: wrap all display strings in t() from i18next
-// to enable Hindi, Marathi, Tamil support later
 
 const css = `
   @keyframes lexFadeIn { from{opacity:0;transform:translateY(16px)} to{opacity:1;transform:translateY(0)} }
@@ -15,15 +17,19 @@ const css = `
 `;
 
 export default function ScenarioPage({ onComplete }) {
-  const [scenarios, setScenarios] = useState([]);
+  const [scenarios, setScenarios] = useState(localScenarios);
   const [currentIdx, setCurrentIdx] = useState(0);
   const [hasAnswered, setHasAnswered] = useState(false);
 
   useEffect(() => {
     fetch(`${API_BASE}/scenarios`)
       .then(res => res.json())
-      .then(data => setScenarios(data))
-      .catch(e => console.error("Error fetching scenarios:", e));
+      .then(data => {
+        if (data && data.length > 0) {
+          setScenarios(data);
+        }
+      })
+      .catch(e => console.warn("Backend not reachable, using local scenarios:", e));
   }, []);
 
   const handleAnswer = (isCorrect) => {
@@ -32,7 +38,7 @@ export default function ScenarioPage({ onComplete }) {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ userId: 'guest', scenarioId: scenarios[currentIdx].id, isCorrect })
-    }).catch(e => console.error(e));
+    }).catch(e => console.warn("Could not save progress:", e));
   };
 
   const nextScenario = () => {
@@ -40,6 +46,7 @@ export default function ScenarioPage({ onComplete }) {
     setCurrentIdx(prev => prev + 1);
   };
 
+<<<<<<< HEAD
   // ─── AI Scenario Generator ───
   const [isGenerating, setIsGenerating] = useState(false);
   const [genError, setGenError] = useState(null);
@@ -104,11 +111,15 @@ Start your response with { and end with }
   };
 
   if (scenarios.length === 0) return <div style={{ padding: '80px 20px', textAlign: 'center', fontFamily: "'Outfit',sans-serif" }}>Loading case files…</div>;
+=======
+  if (scenarios.length === 0) return <div style={{ padding: '80px 20px', textAlign: 'center', fontFamily: "'DM Sans', sans-serif" }}>Loading case files…</div>;
+>>>>>>> main
 
   if (currentIdx >= scenarios.length) {
     return (
       <>
         <style>{css}</style>
+<<<<<<< HEAD
         <div style={{ padding: '80px 20px', textAlign: 'center', fontFamily: "'Outfit',sans-serif", animation: 'lexFadeIn 0.4s ease' }}>
           <div style={{ fontSize: '3.5rem', marginBottom: '16px' }}>⚖️</div>
           <h2 style={{ fontFamily: "'Syne',sans-serif", fontSize: '2rem', fontWeight: 800, color: '#1a3a2a', marginBottom: '8px' }}>
@@ -136,6 +147,23 @@ Start your response with { and end with }
               Back to Profile 👤
             </button>
           </div>
+=======
+        <div style={{ padding: '80px 20px', textAlign: 'center', fontFamily: "'DM Sans', sans-serif", animation: 'lexFadeIn 0.4s ease' }}>
+
+          <h2 style={{ fontFamily: "'Instrument Serif', serif", fontSize: '2.4rem', fontWeight: 500, color: '#1a3a2a' }}>
+            All Case Files Complete!
+          </h2>
+          <p style={{ color: '#6b7280', marginBottom: '28px' }}>You've reviewed every scenario in the dossier.</p>
+          <button onClick={onComplete} style={{
+            padding: '14px 36px', background: '#a8e63d', color: '#0D3B2E',
+            border: 'none', borderRadius: '10px', fontWeight: 700,
+            cursor: 'pointer', fontSize: '1rem',
+            boxShadow: '0 4px 12px rgba(168,230,61,0.3)',
+            fontFamily: "'DM Sans', sans-serif"
+          }}>
+            Go to Profile
+          </button>
+>>>>>>> main
         </div>
       </>
     );
@@ -144,8 +172,9 @@ Start your response with { and end with }
   return (
     <>
       <style>{css}</style>
-      <div style={{ padding: '40px 20px', fontFamily: "'Outfit',sans-serif" }}>
+      <div style={{ padding: '40px 20px', fontFamily: "'DM Sans', sans-serif" }}>
         {/* Progress indicator */}
+<<<<<<< HEAD
         {/* Header with AI Generator Button */}
         <div style={{
           maxWidth: '640px', margin: '0 auto 20px',
@@ -169,6 +198,10 @@ Start your response with { and end with }
           >
             {isGenerating ? "⏳ Drafting Case File..." : "✨ Generate New Case"}
           </button>
+=======
+        <div style={{ maxWidth: '640px', margin: '0 auto 20px', textAlign: 'center', fontWeight: 600, color: '#1a3a2a', textTransform: 'uppercase', letterSpacing: '0.05em' }}>
+          Case File {currentIdx + 1} of {scenarios.length}
+>>>>>>> main
         </div>
 
         {/* Generator Error Banner */}
@@ -209,8 +242,9 @@ Start your response with { and end with }
               border: 'none', borderRadius: '10px', fontWeight: 700,
               cursor: 'pointer', fontSize: '1rem',
               boxShadow: '0 4px 12px rgba(168,230,61,0.3)',
+              fontFamily: "'DM Sans', sans-serif"
             }}>
-              Next Case File →
+              Next Case File
             </button>
           </div>
         )}

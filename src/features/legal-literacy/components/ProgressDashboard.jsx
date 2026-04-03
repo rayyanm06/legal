@@ -1,5 +1,5 @@
 // ProgressDashboard.jsx - LexArena structured profile page
-// Hero greeting → compact stat row → quick actions → quote → badges
+// Hero greeting → compact stat row → quick actions → quick quote → badges
 
 import React, { useState, useEffect, useRef } from 'react';
 import { useProgress } from '../hooks/useProgress';
@@ -23,7 +23,7 @@ function useCountUp(target, dur = 700) {
     if (target === 0) { setVal(0); return; }
     const steps = Math.ceil(dur / 16);
     let step = 0;
-    clearInterval(ref.current);
+    if (ref.current) clearInterval(ref.current);
     ref.current = setInterval(() => {
       step++;
       setVal(Math.round((step / steps) * target));
@@ -41,9 +41,9 @@ const LEVEL_COLORS = {
 };
 
 const BADGE_META = {
-  'First Step':  { desc: 'Complete your first case',  rank: 'I',   color: '#10b981', icon: '🏁' },
-  'Sharp Mind':  { desc: '5 correct answers',         rank: 'II',  color: '#6366f1', icon: '🧠' },
-  'Legal Eagle': { desc: 'Ace all scenarios',          rank: 'III', color: '#f59e0b', icon: '🦅' },
+  'First Step':  { desc: 'Complete your first case',  rank: 'I',   color: '#10b981', icon: 'START' },
+  'Sharp Mind':  { desc: '5 correct answers',         rank: 'II',  color: '#6366f1', icon: 'MIND' },
+  'Legal Eagle': { desc: 'Ace all scenarios',          rank: 'III', color: '#f59e0b', icon: 'EAGLE' },
 };
 const ALL_BADGES = Object.keys(BADGE_META);
 
@@ -58,7 +58,7 @@ export default function ProgressDashboard({ onGoQuiz }) {
   }, []);
 
   if (loading) return (
-    <div style={{ padding: '80px 20px', textAlign: 'center', fontFamily: "'Outfit',sans-serif", color: '#6b7280' }}>
+    <div style={{ padding: '80px 20px', textAlign: 'center', fontFamily: "'DM Sans', sans-serif", color: '#6b7280' }}>
       Loading your profile…
     </div>
   );
@@ -68,20 +68,21 @@ export default function ProgressDashboard({ onGoQuiz }) {
   return (
     <>
       <style>{css}</style>
-      <div style={{ padding: '36px 20px 48px', fontFamily: "'Outfit', sans-serif", maxWidth: '920px', margin: '0 auto' }}>
+      <div style={{ padding: '0 20px 48px', fontFamily: "'DM Sans', sans-serif", maxWidth: '1000px', margin: '0 auto' }}>
 
         {/* ═══ HERO GREETING ═══ */}
         <div style={{
           display: 'flex', alignItems: 'center', justifyContent: 'space-between',
           flexWrap: 'wrap', gap: '16px', marginBottom: '32px',
+          paddingTop: '24px',
           animation: 'lexCardIn 0.4s ease both',
         }}>
           <div>
             <h2 style={{
-              fontFamily: "'Syne', sans-serif", fontSize: '1.75rem',
-              fontWeight: 800, color: '#1a3a2a', margin: '0 0 6px'
-            }}>Your Legal Battle Profile</h2>
-            <p style={{ color: '#6b7280', margin: 0, fontSize: '0.9rem' }}>
+              fontFamily: "'Instrument Serif', serif", fontSize: '2.8rem',
+              fontWeight: 500, color: '#1a3a2a', margin: '0 0 6px'
+            }}>Your Battle Profile</h2>
+            <p style={{ color: '#6b7280', margin: 0, fontSize: '1rem', opacity: 0.8 }}>
               Track your progress. Earn your honours. Know your rights.
             </p>
           </div>
@@ -89,35 +90,38 @@ export default function ProgressDashboard({ onGoQuiz }) {
           <div style={{
             display: 'inline-flex', alignItems: 'center', gap: '8px',
             background: lc.bg, border: `1.5px solid ${lc.border}`,
-            color: lc.text, padding: '8px 20px', borderRadius: '999px',
-            fontWeight: 700, fontSize: '0.85rem', letterSpacing: '0.03em',
+            color: lc.text, padding: '10px 24px', borderRadius: '999px',
+            fontWeight: 700, fontSize: '0.9rem', letterSpacing: '0.05em',
+            textTransform: 'uppercase'
           }}>
-            🏛️ Rank: {level}
+            Rank: {level}
           </div>
         </div>
 
         {/* ═══ STAT CARDS — compact 2×2 grid ═══ */}
         <div style={{
+<<<<<<< HEAD
           display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)',
           gap: '16px', marginBottom: '28px', alignItems: 'stretch',
+=======
+          display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))',
+          gap: '20px', marginBottom: '32px', alignItems: 'start',
+>>>>>>> main
         }}>
-          {/* Points */}
-          <StatCard delay={0} borderColor="#a8e63d" icon="⚡" label="Total Points"
+          <StatCard delay={0} borderColor="#a8e63d" label="Total Points"
             value={animPts} />
-          {/* Accuracy */}
-          <StatCard delay={80} borderColor="#f59e0b" icon="🎯" label="Accuracy"
+          <StatCard delay={80} borderColor="#f59e0b" label="Accuracy"
             value={animAcc + '%'} />
-          {/* Completed */}
-          <StatCard delay={160} borderColor="#10b981" icon="📋" label="Cases Closed"
+          <StatCard delay={160} borderColor="#10b981" label="Cases Closed"
             value={completedScenarios.length}
             empty={completedScenarios.length === 0 ? 'None yet' : null} />
-          {/* Total Attempts */}
-          <StatCard delay={240} borderColor="#6366f1" icon="📊" label="Scenarios Seen"
+          <StatCard delay={240} borderColor="#6366f1" label="Scenarios Seen"
             value={completedScenarios.length}
             empty={completedScenarios.length === 0 ? '—' : null} />
         </div>
 
         {/* ═══ QUICK ACTIONS ═══ */}
+<<<<<<< HEAD
         <div style={{
           background: 'linear-gradient(135deg, #1a3a2a 0%, #2d5a42 100%)',
           borderRadius: '14px', padding: '24px 28px',
@@ -128,6 +132,24 @@ export default function ProgressDashboard({ onGoQuiz }) {
           <div>
             <div style={{ color: '#a8e63d', fontWeight: 700, fontSize: '1rem', marginBottom: '4px', fontFamily: "'Syne',sans-serif" }}>
               {completedScenarios.length === 0 ? 'Ready to begin?' : 'Continue Training'}
+=======
+        {completedScenarios.length === 0 && (
+          <div style={{
+            background: 'linear-gradient(135deg, #1a3a2a 0%, #2d5a42 100%)',
+            borderRadius: '20px', padding: '32px 40px',
+            display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+            flexWrap: 'wrap', gap: '24px', marginBottom: '32px',
+            animation: 'lexCardIn 0.4s ease 300ms both',
+            boxShadow: '0 12px 30px rgba(26, 58, 42, 0.15)'
+          }}>
+            <div>
+              <div style={{ color: '#a8e63d', fontWeight: 600, fontSize: '1.5rem', marginBottom: '6px', fontFamily: "'Instrument Serif', serif" }}>
+                Ready to begin?
+              </div>
+              <div style={{ color: 'rgba(245,240,232,0.8)', fontSize: '0.95rem', maxWidth: '400px' }}>
+                Enter the Arena to test your legal knowledge and earn your first badge.
+              </div>
+>>>>>>> main
             </div>
             <div style={{ color: 'rgba(245,240,232,0.7)', fontSize: '0.85rem' }}>
               {completedScenarios.length === 0 
@@ -136,59 +158,60 @@ export default function ProgressDashboard({ onGoQuiz }) {
             </div>
           </div>
             <button onClick={onGoQuiz} style={{
-              background: '#a8e63d', color: '#0D3B2E', padding: '10px 24px',
-              borderRadius: '10px', fontWeight: 700, fontSize: '0.85rem',
+              background: '#a8e63d', color: '#0D3B2E', padding: '14px 32px',
+              borderRadius: '12px', fontWeight: 700, fontSize: '0.95rem',
               cursor: 'pointer', whiteSpace: 'nowrap', border: 'none',
-              fontFamily: "'Outfit', sans-serif",
+              fontFamily: "'DM Sans', sans-serif",
               transition: 'transform 0.2s, box-shadow 0.2s',
             }}
-              onMouseEnter={e => { e.currentTarget.style.transform = 'scale(1.05)'; e.currentTarget.style.boxShadow = '0 4px 16px rgba(168,230,61,0.4)'; }}
-              onMouseLeave={e => { e.currentTarget.style.transform = 'scale(1)'; e.currentTarget.style.boxShadow = 'none'; }}
+              onMouseEnter={e => { e.currentTarget.style.transform = 'translateY(-2px)'; e.currentTarget.style.boxShadow = '0 8px 24px rgba(168,230,61,0.4)'; }}
+              onMouseLeave={e => { e.currentTarget.style.transform = 'none'; e.currentTarget.style.boxShadow = 'none'; }}
             >
-              🎯 Start Quiz →
+              Start Quiz
             </button>
           </div>
 
 
         {/* ═══ LEGAL OATH ═══ */}
         <div style={{
-          position: 'relative', background: '#fff', borderRadius: '12px',
-          padding: '24px 28px 24px 44px', marginBottom: '28px',
-          boxShadow: '0 1px 4px rgba(0,0,0,0.04)',
-          borderLeft: '4px solid #a8e63d',
+          position: 'relative', background: '#fff', borderRadius: '16px',
+          padding: '32px 40px 32px 56px', marginBottom: '32px',
+          boxShadow: '0 4px 12px rgba(0,0,0,0.03)',
+          borderLeft: '5px solid #a8e63d',
           animation: 'lexCardIn 0.4s ease 350ms both',
         }}>
           <span style={{
-            position: 'absolute', top: '8px', left: '12px',
-            fontSize: '2.5rem', color: '#a8e63d20', fontFamily: 'Georgia, serif',
+            position: 'absolute', top: '12px', left: '16px',
+            fontSize: '3rem', color: '#a8e63d30', fontFamily: 'Georgia, serif',
             lineHeight: 1, pointerEvents: 'none',
           }}>"</span>
           <p style={{
-            fontStyle: 'italic', color: '#6b7280', margin: '0 0 8px',
-            lineHeight: 1.6, fontSize: '0.95rem',
+            fontStyle: 'italic', color: '#475569', margin: '0 0 12px',
+            lineHeight: 1.7, fontSize: '1.05rem',
           }}>
             Justice cannot be for one side alone, but must be for both.
           </p>
           <div style={{
-            textAlign: 'right', fontWeight: 600, fontSize: '0.8rem',
+            textAlign: 'right', fontWeight: 700, fontSize: '0.85rem',
             color: '#1a3a2a', fontStyle: 'normal',
+            textTransform: 'uppercase', letterSpacing: '0.05em'
           }}>— Eleanor Roosevelt</div>
         </div>
 
-        {/* ═══ COURTROOM HONOURS ═══ */}
+        {/* ═══ HONOURS ═══ */}
         <div style={{
-          background: '#fff', borderRadius: '14px', padding: '28px 24px',
-          boxShadow: '0 1px 4px rgba(0,0,0,0.04)',
+          background: '#fff', borderRadius: '20px', padding: '40px',
+          boxShadow: '0 4px 12px rgba(0,0,0,0.03)',
           animation: 'lexCardIn 0.4s ease 400ms both',
         }}>
           <div style={{
-            fontSize: '0.7rem', textTransform: 'uppercase', letterSpacing: '0.12em',
-            color: '#6b7280', fontWeight: 600, marginBottom: '24px', textAlign: 'center',
-          }}>Your Courtroom Honours</div>
+            fontSize: '0.75rem', textTransform: 'uppercase', letterSpacing: '0.15em',
+            color: '#94a3b8', fontWeight: 700, marginBottom: '32px', textAlign: 'center',
+          }}>Courtroom Honours</div>
 
           <div style={{
-            display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)',
-            gap: '16px',
+            display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(240px, 1fr))',
+            gap: '20px',
           }}>
             {ALL_BADGES.map(b => {
               const has = badges.includes(b);
@@ -196,43 +219,35 @@ export default function ProgressDashboard({ onGoQuiz }) {
               return (
                 <div key={b} style={{
                   display: 'flex', flexDirection: 'column', alignItems: 'center',
-                  padding: '20px 12px', borderRadius: '12px',
+                  padding: '32px 24px', borderRadius: '16px',
                   background: has ? `${meta.color}08` : '#fafafa',
-                  border: has ? `1.5px solid ${meta.color}30` : '1.5px solid #f0f0f0',
+                  border: has ? `2px solid ${meta.color}40` : '2px solid #f1f5f9',
                   transition: 'all 0.3s ease',
                   position: 'relative',
                 }}>
-                  {/* Lock overlay */}
-                  {!has && (
-                    <div style={{
-                      position: 'absolute', top: '10px', right: '10px',
-                      fontSize: '0.7rem', color: '#d1d5db',
-                    }}>🔒</div>
-                  )}
-
-                  {/* Badge icon */}
+                  {/* Badge icon text */}
                   <div style={{
-                    width: '52px', height: '52px', borderRadius: '12px',
+                    width: '64px', height: '64px', borderRadius: '16px',
                     display: 'flex', alignItems: 'center', justifyContent: 'center',
-                    fontSize: '1.5rem',
-                    background: has ? `${meta.color}18` : '#f3f4f6',
-                    border: has ? `2px solid ${meta.color}40` : '2px solid #e5e7eb',
-                    marginBottom: '12px',
-                    opacity: has ? 1 : 0.4,
-                    transition: 'all 0.3s ease',
+                    fontSize: '0.65rem', fontWeight: 800, textTransform: 'uppercase',
+                    background: has ? `${meta.color}20` : '#f3f4f6',
+                    color: has ? meta.color : '#94a3b8',
+                    border: has ? `2px solid ${meta.color}40` : '2px solid #e2e8f0',
+                    marginBottom: '16px',
+                    opacity: has ? 1 : 0.5,
                   }}>
                     {meta.icon}
                   </div>
 
                   <div style={{
-                    fontWeight: 700, fontSize: '0.85rem',
-                    color: has ? '#1a3a2a' : '#9ca3af',
-                    fontFamily: "'Syne', sans-serif", marginBottom: '4px',
+                    fontWeight: 700, fontSize: '1rem',
+                    color: has ? '#1a3a2a' : '#94a3b8',
+                    marginBottom: '6px',
                     textAlign: 'center',
                   }}>{b}</div>
                   <div style={{
-                    fontSize: '0.72rem', color: '#9ca3af',
-                    textAlign: 'center', lineHeight: 1.3,
+                    fontSize: '0.8rem', color: '#94a3b8',
+                    textAlign: 'center', lineHeight: 1.5,
                   }}>{meta.desc}</div>
                 </div>
               );
@@ -242,30 +257,30 @@ export default function ProgressDashboard({ onGoQuiz }) {
 
         {/* ═══ PROGRESS BAR ═══ */}
         <div style={{
-          marginTop: '28px', background: '#fff', borderRadius: '14px',
-          padding: '24px', boxShadow: '0 1px 4px rgba(0,0,0,0.04)',
+          marginTop: '32px', background: '#fff', borderRadius: '20px',
+          padding: '32px', boxShadow: '0 4px 12px rgba(0,0,0,0.03)',
           animation: 'lexCardIn 0.4s ease 450ms both',
         }}>
           <div style={{
             display: 'flex', justifyContent: 'space-between', alignItems: 'center',
-            marginBottom: '12px',
+            marginBottom: '16px',
           }}>
-            <span style={{ fontSize: '0.8rem', fontWeight: 600, color: '#1a3a2a' }}>
-              Overall Progress
+            <span style={{ fontSize: '0.9rem', fontWeight: 700, color: '#1a3a2a', textTransform: 'uppercase', letterSpacing: '0.05em' }}>
+              Legal Proficiency
             </span>
-            <span style={{ fontSize: '0.75rem', color: '#6b7280' }}>
-              {completedScenarios.length} / 4 scenarios
+            <span style={{ fontSize: '0.85rem', color: '#64748b', fontWeight: 600 }}>
+              {completedScenarios.length} / 4 cases
             </span>
           </div>
           <div style={{
-            height: '8px', background: '#e5e7eb', borderRadius: '4px',
+            height: '10px', background: '#f1f5f9', borderRadius: '5px',
             overflow: 'hidden',
           }}>
             <div style={{
-              height: '100%', borderRadius: '4px',
+              height: '100%', borderRadius: '5px',
               background: 'linear-gradient(90deg, #a8e63d, #4a9e6b)',
               width: `${(completedScenarios.length / 4) * 100}%`,
-              transition: 'width 0.6s ease',
+              transition: 'width 0.8s cubic-bezier(0.65, 0, 0.35, 1)',
             }} />
           </div>
         </div>
@@ -276,35 +291,34 @@ export default function ProgressDashboard({ onGoQuiz }) {
 }
 
 /* ── Compact Stat Card component ── */
-function StatCard({ delay, borderColor, icon, label, value, empty }) {
+function StatCard({ delay, borderColor, label, value, empty }) {
   return (
     <div style={{
-      background: '#fff', borderRadius: '12px', padding: '20px',
-      borderLeft: `3px solid ${borderColor}`,
-      boxShadow: '0 1px 4px rgba(0,0,0,0.04)',
+      background: '#fff', borderRadius: '16px', padding: '24px',
+      borderLeft: `5px solid ${borderColor}`,
+      boxShadow: '0 4px 12px rgba(0,0,0,0.03)',
       animation: `lexCardIn 0.4s ease ${delay}ms both`,
       transition: 'transform 0.2s, box-shadow 0.2s',
       cursor: 'default',
     }}
-      onMouseEnter={e => { e.currentTarget.style.transform = 'translateY(-2px)'; e.currentTarget.style.boxShadow = '0 6px 16px rgba(0,0,0,0.08)'; }}
-      onMouseLeave={e => { e.currentTarget.style.transform = 'none'; e.currentTarget.style.boxShadow = '0 1px 4px rgba(0,0,0,0.04)'; }}
+      onMouseEnter={e => { e.currentTarget.style.transform = 'translateY(-4px)'; e.currentTarget.style.boxShadow = '0 12px 24px rgba(0,0,0,0.06)'; }}
+      onMouseLeave={e => { e.currentTarget.style.transform = 'none'; e.currentTarget.style.boxShadow = '0 4px 12px rgba(0,0,0,0.03)'; }}
     >
       <div style={{
         display: 'flex', justifyContent: 'space-between', alignItems: 'center',
-        marginBottom: '8px',
+        marginBottom: '12px',
       }}>
         <span style={{
-          fontSize: '0.65rem', textTransform: 'uppercase',
-          letterSpacing: '0.1em', color: '#9ca3af', fontWeight: 600,
+          fontSize: '0.7rem', textTransform: 'uppercase',
+          letterSpacing: '0.15em', color: '#94a3b8', fontWeight: 700,
         }}>{label}</span>
-        <span style={{ fontSize: '1.1rem' }}>{icon}</span>
       </div>
       {empty ? (
-        <div style={{ fontSize: '0.85rem', color: '#d1d5db', fontWeight: 500 }}>{empty}</div>
+        <div style={{ fontSize: '0.95rem', color: '#cbd5e1', fontWeight: 600, fontStyle: 'italic' }}>{empty}</div>
       ) : (
         <div style={{
-          fontFamily: "'Syne', sans-serif", fontSize: '1.75rem',
-          fontWeight: 800, color: '#1a3a2a', lineHeight: 1.1,
+          fontFamily: "'Instrument Serif', serif", fontSize: '2.4rem',
+          fontWeight: 500, color: '#1a3a2a', lineHeight: 1,
         }}>{value}</div>
       )}
     </div>
