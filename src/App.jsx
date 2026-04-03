@@ -10,11 +10,14 @@ import DashboardPage from './pages/DashboardPage';
 import PricingPage from './pages/PricingPage';
 import AboutPage from './pages/AboutPage';
 import AuthPage from './pages/AuthPage';
+import LegalLiteracyApp from './features/legal-literacy';
 
 // Navbar Component
 const Navbar = () => {
   const [isScrolled, setIsScrolled] = useState(false);
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
+  const location = useLocation();
+  const isLearnPage = location.pathname === '/learn';
 
   useEffect(() => {
     const handleScroll = () => {
@@ -30,10 +33,18 @@ const Navbar = () => {
     { name: 'Lawyers', path: '/lawyers' },
     { name: 'Pricing', path: '/pricing' },
     { name: 'About', path: '/about' },
+    { name: 'LexArena ⚖️', path: '/learn' },
   ];
 
+  // On /learn page, always show dark navbar (no transparent state)
+  const navDark = isLearnPage || isScrolled;
+  // On /learn page, hide global navbar when scrolled down
+  const hideNav = isLearnPage && isScrolled;
+
   return (
-    <nav className={`fixed top-0 w-full z-50 transition-all duration-300 ${isScrolled ? 'bg-forest/80 backdrop-blur-md py-3 shadow-lg' : 'bg-transparent py-5'}`}>
+    <nav className={`fixed top-0 w-full z-50 transition-all duration-300 ${navDark ? 'bg-forest/95 backdrop-blur-md py-3 shadow-lg' : 'bg-transparent py-5'}`}
+      style={{ transform: hideNav ? 'translateY(-100%)' : 'translateY(0)' }}
+    >
       <div className="max-w-7xl mx-auto px-6 flex justify-between items-center">
         <Link to="/" className="flex items-center gap-2 group">
           <div className="bg-lime p-2 rounded-lg group-hover:rotate-12 transition-transform">
@@ -279,6 +290,7 @@ function App() {
         <Route path="/about" element={<AboutPage />} />
         <Route path="/login" element={<AuthPage />} />
         <Route path="/signup" element={<AuthPage />} />
+        <Route path="/learn" element={<LegalLiteracyApp />} />
       </Routes>
       <Footer />
       <SOSButton />
