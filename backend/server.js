@@ -22,7 +22,7 @@ const getProviders = () => ({
   OLLAMA: {
     url: "https://ollama.com/v1/chat/completions",
     model: "ministral-3:8b", // Efficient cloud model
-    key: process.env.OLLAMA_API_KEY
+    key: "586892e0e436442d8189d26cf6106613.rlH-jUMVYKSshpRlqJ4O7OID"
   },
   ANTHROPIC: {
     url: "https://api.anthropic.com/v1/messages",

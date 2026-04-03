@@ -1,3 +1,5 @@
+import React, { useState, useEffect } from 'react';
+import QuestionCard from './QuestionCard';
 import { askClaude, parseJSONResponse } from '../utils/aiService';
 
 const API_BASE = "http://localhost:5000";
