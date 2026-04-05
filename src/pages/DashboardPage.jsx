@@ -9,6 +9,14 @@ import {
 
 const DashboardPage = () => {
   const [activeTab, setActiveTab] = useState("overview");
+  const [userName, setUserName] = useState("Guest");
+
+  React.useEffect(() => {
+    const savedName = localStorage.getItem('nyai_user_name');
+    if (savedName) setUserName(savedName);
+  }, []);
+
+  const initials = userName.substring(0, 2).toUpperCase();
 
   const sidebarLinks = [
     { id: "overview", label: "Overview", icon: LayoutDashboard },
@@ -36,9 +44,9 @@ const DashboardPage = () => {
       <aside className="w-72 bg-white border-r border-gray-100 hidden lg:flex flex-col sticky top-20 h-[calc(100vh-80px)]">
          <div className="p-8">
             <div className="flex items-center gap-4 mb-8 bg-gray-50 p-4 rounded-2xl border border-gray-100">
-               <div className="w-12 h-12 bg-forest rounded-xl flex items-center justify-center text-lime font-black text-lg">YS</div>
+               <div className="w-12 h-12 bg-forest rounded-xl flex items-center justify-center text-lime font-black text-lg">{initials}</div>
                <div className="flex-1 min-w-0">
-                  <h4 className="text-sm font-black text-gray-900 truncate uppercase tracking-tighter">Yogesh Sharma</h4>
+                  <h4 className="text-sm font-black text-gray-900 truncate uppercase tracking-tighter">{userName}</h4>
                   <p className="text-[10px] font-black text-lime uppercase tracking-widest italic">PRO MEMBER</p>
                </div>
             </div>

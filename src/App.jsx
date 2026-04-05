@@ -1,7 +1,9 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { Routes, Route, Link, useLocation, Navigate, useNavigate } from 'react-router-dom';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Menu, X, Scale, Bell, Globe, ArrowRight, MessageCircle, FileText, Users, LayoutDashboard, CheckCircle2, AlertTriangle, ShieldCheck, Download, ExternalLink, Play, Search, PlusCircle, History, Settings, LogOut, Phone } from 'lucide-react';
+import { Menu, X, Scale, Bell, Globe, ArrowRight, MessageCircle, FileText, Users, LayoutDashboard, CheckCircle2, AlertTriangle, ShieldCheck, Download, ExternalLink, Play, Search, PlusCircle, History, Settings, LogOut, Phone, ChevronDown } from 'lucide-react';
+import { useTranslation } from 'react-i18next';
+import { LANGUAGES } from './i18n';
 import LandingPage from './pages/LandingPage';
 import ChatPage from './pages/ChatPage';
 import DocumentsPage from './pages/DocumentsPage';
@@ -12,10 +14,13 @@ import AuthPage from './pages/AuthPage';
 import LegalLiteracyApp from './features/legal-literacy';
 
 // Navbar Component
-const Navbar = ({ isLoggedIn, onLogout }) => {
+const Navbar = ({ isLoggedIn, onLogout, userName }) => {
   const [isScrolled, setIsScrolled] = useState(false);
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
+  const [langOpen, setLangOpen] = useState(false);
+  const langRef = useRef(null);
   const location = useLocation();
+  const { t, i18n } = useTranslation();
   const isAboutPage = location.pathname === '/about';
   const isLawyersPage = location.pathname === '/lawyers';
   const isLearnPage = location.pathname === '/learn';
@@ -34,17 +39,28 @@ const Navbar = ({ isLoggedIn, onLogout }) => {
     return () => window.removeEventListener('scroll', handleScroll);
   }, []);
 
+  // Close language dropdown on outside click
+  useEffect(() => {
+    const handleClickOutside = (e) => {
+      if (langRef.current && !langRef.current.contains(e.target)) setLangOpen(false);
+    };
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, []);
+
+  const currentLang = LANGUAGES.find(l => l.code === i18n.language) || LANGUAGES[0];
+
   const landingLinks = [
-    { name: 'Home', path: '/' },
-    { name: 'About', path: '/about' },
-    { name: 'Features', path: '/#features' },
+    { name: t('nav.home'), path: '/', key: 'Home' },
+    { name: t('nav.about'), path: '/about', key: 'About' },
+    { name: t('nav.features'), path: '/#features', key: 'Features' },
   ];
 
   const productLinks = [
-    { name: 'AI Tools', path: '/chat' },
-    { name: 'Lawyers', path: '/lawyers' },
-    { name: 'LexArena ⚖️', path: '/learn' },
-    { name: 'Dashboard', path: '/dashboard' },
+    { name: t('nav.aiTools'), path: '/chat', key: 'AI Tools' },
+    { name: t('nav.lawyers'), path: '/lawyers', key: 'Lawyers' },
+    { name: t('nav.lexArena'), path: '/learn', key: 'LexArena' },
+    { name: t('nav.dashboard'), path: '/dashboard', key: 'Dashboard' },
   ];
 
   const navLinks = isProductSection ? productLinks : landingLinks;
@@ -72,10 +88,10 @@ const Navbar = ({ isLoggedIn, onLogout }) => {
               key={link.name} 
               to={link.path} 
               onClick={(e) => {
-                if (link.name === 'Home' && location.pathname === '/') {
+                if (link.key === 'Home' && location.pathname === '/') {
                   e.preventDefault();
                   window.scrollTo({ top: 0, behavior: 'smooth' });
-                } else if (link.name === 'Features' && location.pathname === '/') {
+                } else if (link.key === 'Features' && location.pathname === '/') {
                   e.preventDefault();
                   const target = document.getElementById('features');
                   if (target) target.scrollIntoView({ behavior: 'smooth' });
@@ -88,26 +104,62 @@ const Navbar = ({ isLoggedIn, onLogout }) => {
           ))}
           {isLoggedIn && !isProductSection && (
             <Link to="/chat" className="text-offwhite/80 hover:text-lime transition-colors font-medium">
-              Dashboard
+              {t('nav.dashboard')}
             </Link>
           )}
         </div>
 
         <div className="hidden md:flex items-center gap-4">
-          <button className="text-offwhite hover:text-white font-medium p-2"><Globe size={20} /></button>
+          {/* Language Dropdown */}
+          <div className="relative" ref={langRef}>
+            <button 
+              onClick={() => setLangOpen(!langOpen)}
+              className="flex items-center gap-1.5 text-offwhite hover:text-white font-medium px-2.5 py-1.5 rounded-lg hover:bg-white/10 transition-all"
+            >
+              <Globe size={18} />
+              <span className="text-sm">{currentLang.native}</span>
+              <ChevronDown size={14} className={`transition-transform ${langOpen ? 'rotate-180' : ''}`} />
+            </button>
+            <AnimatePresence>
+              {langOpen && (
+                <motion.div
+                  initial={{ opacity: 0, y: -8, scale: 0.95 }}
+                  animate={{ opacity: 1, y: 0, scale: 1 }}
+                  exit={{ opacity: 0, y: -8, scale: 0.95 }}
+                  transition={{ duration: 0.15 }}
+                  className="absolute right-0 mt-2 w-52 bg-charcoal/95 backdrop-blur-xl border border-white/10 rounded-xl shadow-2xl overflow-hidden z-50"
+                >
+                  <div className="py-1 max-h-80 overflow-y-auto">
+                    {LANGUAGES.map((lang) => (
+                      <button
+                        key={lang.code}
+                        onClick={() => { i18n.changeLanguage(lang.code); setLangOpen(false); }}
+                        className={`w-full text-left px-4 py-2.5 flex items-center justify-between hover:bg-white/10 transition-colors ${
+                          i18n.language === lang.code ? 'bg-lime/10 text-lime' : 'text-offwhite/80'
+                        }`}
+                      >
+                        <span className="font-medium">{lang.native}</span>
+                        <span className="text-xs text-offwhite/40">{lang.label}</span>
+                      </button>
+                    ))}
+                  </div>
+                </motion.div>
+              )}
+            </AnimatePresence>
+          </div>
           
           {!isLoggedIn && (
             <>
-              <Link to="/login" className="text-offwhite hover:text-white font-medium px-4">Login</Link>
+              <Link to="/login" className="text-offwhite hover:text-white font-medium px-4">{t('nav.login')}</Link>
               <Link to="/signup" className="bg-lime hover:bg-lime-hover text-forest font-bold px-6 py-2.5 rounded-lg transition-all shadow-md">
-                Try for Free
+                {t('nav.tryFree')}
               </Link>
             </>
           )}
 
           {isLoggedIn && (
             <div className="flex items-center gap-3 pl-4 border-l border-white/10">
-              <div className="w-8 h-8 rounded-full bg-lime flex items-center justify-center text-forest font-bold text-xs uppercase">YS</div>
+              <div className="w-8 h-8 rounded-full bg-lime flex items-center justify-center text-forest font-bold text-xs uppercase">{userName ? userName.substring(0, 2) : 'US'}</div>
               <button 
                 onClick={onLogout}
                 className="text-offwhite/60 hover:text-white transition-colors"
@@ -140,10 +192,10 @@ const Navbar = ({ isLoggedIn, onLogout }) => {
                 to={link.path} 
                 onClick={(e) => {
                   setMobileMenuOpen(false);
-                  if (link.name === 'Home' && location.pathname === '/') {
+                  if (link.key === 'Home' && location.pathname === '/') {
                     e.preventDefault();
                     window.scrollTo({ top: 0, behavior: 'smooth' });
-                  } else if (link.name === 'Features' && location.pathname === '/') {
+                  } else if (link.key === 'Features' && location.pathname === '/') {
                     e.preventDefault();
                     const target = document.getElementById('features');
                     if (target) target.scrollIntoView({ behavior: 'smooth' });
@@ -161,12 +213,12 @@ const Navbar = ({ isLoggedIn, onLogout }) => {
                   onClick={() => { onLogout(); setMobileMenuOpen(false); }} 
                   className="flex items-center gap-3 text-lime text-xl font-bold py-2"
                 >
-                  <LogOut size={20} /> Logout
+                  <LogOut size={20} /> {t('nav.logout')}
                 </button>
               ) : (
                 <>
-                  <Link to="/login" onClick={() => setMobileMenuOpen(false)} className="text-offwhite text-lg font-medium">Login</Link>
-                  <Link to="/signup" onClick={() => setMobileMenuOpen(false)} className="bg-lime text-forest font-bold px-6 py-3 rounded-lg text-center">Try for Free</Link>
+                  <Link to="/login" onClick={() => setMobileMenuOpen(false)} className="text-offwhite text-lg font-medium">{t('nav.login')}</Link>
+                  <Link to="/signup" onClick={() => setMobileMenuOpen(false)} className="bg-lime text-forest font-bold px-6 py-3 rounded-lg text-center">{t('nav.tryFree')}</Link>
                 </>
               )}
             </div>
@@ -179,6 +231,7 @@ const Navbar = ({ isLoggedIn, onLogout }) => {
 
 // SOS Button Component
 const SOSButton = () => {
+  const { t } = useTranslation();
   const [isOpen, setIsOpen] = useState(false);
 
   return (
@@ -190,7 +243,7 @@ const SOSButton = () => {
         <div className="absolute inset-0 bg-red-600 rounded-full animate-ping opacity-25 group-hover:opacity-40"></div>
         <Phone className="text-white fill-white" size={32} />
         <span className="absolute bottom-full right-0 mb-3 bg-red-600 text-white text-xs font-bold px-3 py-1 rounded-full opacity-0 group-hover:opacity-100 transition-opacity whitespace-nowrap">
-          EMERGENCY HELP
+          {t('sos.buttonLabel')}
         </span>
       </button>
 
@@ -353,10 +406,24 @@ const ProtectedRoute = ({ children, isLoggedIn }) => {
   return children;
 };
 
+import { GoogleOAuthProvider } from '@react-oauth/google';
+
 function App() {
   const [isLoggedIn, setIsLoggedIn] = useState(false);
+  const [userEmail, setUserEmail] = useState(null);
+  const [userName, setUserName] = useState(null);
   const location = useLocation();
   const navigate = useNavigate();
+
+  // Load user from localStorage
+  useEffect(() => {
+    const savedEmail = localStorage.getItem('nyai_user_email');
+    if (savedEmail) {
+      setIsLoggedIn(true);
+      setUserEmail(savedEmail);
+      setUserName(localStorage.getItem('nyai_user_name'));
+    }
+  }, []);
 
   useEffect(() => {
     window.scrollTo(0, 0);
@@ -364,17 +431,25 @@ function App() {
 
   const handleLogout = () => {
     setIsLoggedIn(false);
+    setUserEmail(null);
+    setUserName(null);
+    localStorage.removeItem('nyai_user_email');
+    localStorage.removeItem('nyai_user_name');
     navigate('/');
   };
 
   const isAuthPage = location.pathname === '/login' || location.pathname === '/signup';
   const isChatPage = location.pathname === '/chat';
 
+  // Replace with your actual Google Client ID from Google Cloud Console
+  const GOOGLE_CLIENT_ID = "667036837348-1gvggokp2tcd07lsa4hqc4tnu6kobc0a.apps.googleusercontent.com";
+
   return (
-    <div className="min-h-screen bg-offwhite selection:bg-lime selection:text-forest">
-      {!isAuthPage && <Navbar isLoggedIn={isLoggedIn} onLogout={handleLogout} />}
+    <GoogleOAuthProvider clientId={GOOGLE_CLIENT_ID}>
+      <div className="min-h-screen bg-offwhite selection:bg-lime selection:text-forest">
+      {!isAuthPage && <Navbar isLoggedIn={isLoggedIn} onLogout={handleLogout} userName={userName} />}
       <Routes>
-        <Route path="/" element={<LandingPage isLoggedIn={isLoggedIn} />} />
+        <Route path="/" element={<LandingPage />} />
         <Route 
           path="/chat" 
           element={
@@ -408,20 +483,21 @@ function App() {
           } 
         />
         <Route path="/about" element={<AboutPage />} />
-        <Route path="/login" element={<AuthPage setIsLoggedIn={setIsLoggedIn} />} />
-        <Route path="/signup" element={<AuthPage setIsLoggedIn={setIsLoggedIn} />} />
+        <Route path="/login" element={isLoggedIn ? <Navigate to="/chat" /> : <AuthPage setIsLoggedIn={setIsLoggedIn} setUserEmail={setUserEmail} />} />
+        <Route path="/signup" element={isLoggedIn ? <Navigate to="/chat" /> : <AuthPage setIsLoggedIn={setIsLoggedIn} setUserEmail={setUserEmail} />} />
         <Route 
           path="/learn" 
           element={
             <ProtectedRoute isLoggedIn={isLoggedIn}>
-              <LegalLiteracyApp />
+              <LegalLiteracyApp userEmail={userEmail} />
             </ProtectedRoute>
           } 
         />
       </Routes>
       {!(isAuthPage || isChatPage) && <Footer />}
       {!(isAuthPage || isChatPage) && <SOSButton />}
-    </div>
+      </div>
+    </GoogleOAuthProvider>
   );
 }
 

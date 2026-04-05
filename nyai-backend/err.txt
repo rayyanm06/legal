@@ -1,0 +1,42 @@
+Traceback (most recent call last):
+  File "C:\Users\darshsharma11\OneDrive\Desktop\Projects\nyAI\nyai-backend\venv\Lib\site-packages\pydantic_settings\sources\base.py", line 548, in __call__
+    field_value = self.prepare_field_value(field_name, field, field_value, value_is_complex)
+  File "C:\Users\darshsharma11\OneDrive\Desktop\Projects\nyAI\nyai-backend\venv\Lib\site-packages\pydantic_settings\sources\providers\env.py", line 131, in prepare_field_value
+    raise e
+  File "C:\Users\darshsharma11\OneDrive\Desktop\Projects\nyAI\nyai-backend\venv\Lib\site-packages\pydantic_settings\sources\providers\env.py", line 128, in prepare_field_value
+    value = self.decode_complex_value(field_name, field, value)
+  File "C:\Users\darshsharma11\OneDrive\Desktop\Projects\nyAI\nyai-backend\venv\Lib\site-packages\pydantic_settings\sources\base.py", line 194, in decode_complex_value
+    return json.loads(value)
+           ~~~~~~~~~~^^^^^^^
+  File "C:\Users\darshsharma11\AppData\Local\Programs\Python\Python313\Lib\json\__init__.py", line 346, in loads
+    return _default_decoder.decode(s)
+           ~~~~~~~~~~~~~~~~~~~~~~~^^^
+  File "C:\Users\darshsharma11\AppData\Local\Programs\Python\Python313\Lib\json\decoder.py", line 345, in decode
+    obj, end = self.raw_decode(s, idx=_w(s, 0).end())
+               ~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\darshsharma11\AppData\Local\Programs\Python\Python313\Lib\json\decoder.py", line 363, in raw_decode
+    raise JSONDecodeError("Expecting value", s, err.value) from None
+json.decoder.JSONDecodeError: Expecting value: line 1 column 1 (char 0)
+
+The above exception was the direct cause of the following exception:
+
+Traceback (most recent call last):
+  File "C:\Users\darshsharma11\OneDrive\Desktop\Projects\nyAI\nyai-backend\log.py", line 3, in <module>
+    import app.config
+  File "C:\Users\darshsharma11\OneDrive\Desktop\Projects\nyAI\nyai-backend\app\config.py", line 81, in <module>
+    settings = get_settings()
+  File "C:\Users\darshsharma11\OneDrive\Desktop\Projects\nyAI\nyai-backend\app\config.py", line 78, in get_settings
+    return Settings()
+  File "C:\Users\darshsharma11\OneDrive\Desktop\Projects\nyAI\nyai-backend\venv\Lib\site-packages\pydantic_settings\main.py", line 242, in __init__
+    super().__init__(**__pydantic_self__.__class__._settings_build_values(sources, init_kwargs))
+                       ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\darshsharma11\OneDrive\Desktop\Projects\nyAI\nyai-backend\venv\Lib\site-packages\pydantic_settings\main.py", line 465, in _settings_build_values
+    source_state = source()
+  File "C:\Users\darshsharma11\OneDrive\Desktop\Projects\nyAI\nyai-backend\venv\Lib\site-packages\pydantic_settings\sources\providers\dotenv.py", line 108, in __call__
+    data: dict[str, Any] = super().__call__()
+                           ~~~~~~~~~~~~~~~~^^
+  File "C:\Users\darshsharma11\OneDrive\Desktop\Projects\nyAI\nyai-backend\venv\Lib\site-packages\pydantic_settings\sources\base.py", line 550, in __call__
+    raise SettingsError(
+        f'error parsing value for field "{field_name}" from source "{self.__class__.__name__}"'
+    ) from e
+pydantic_settings.exceptions.SettingsError: error parsing value for field "ALLOWED_ORIGINS" from source "DotEnvSettingsSource"
