@@ -1,8 +1,6 @@
-// aiService.js — Shared AI utility for LexArena
-// Centralizes all AI calls by proxying through the backend server
-// This fixes CORS and API Key exposure issues
+import { API_ENDPOINTS } from '../../../api/config';
 
-const BACKEND_AI_URL = "http://localhost:5000/ai/ask";
+const BACKEND_AI_URL = API_ENDPOINTS.AI_ASK;
 
 /**
  * Send a prompt to the backend AI proxy and return the text response.
@@ -35,19 +33,48 @@ export async function askClaude(prompt, maxTokens = 1000) {
  */
 export function parseJSONResponse(raw) {
   if (typeof raw !== 'string') return raw;
+
+  // 1. Try pure parse (strip out any hallucinated markdown asterisks outside of quotes)
+  const sanitize = (text) => text.replace(/\*\*\s*"/g, '"').replace(/"\s*\*\*/g, '"');
   
-  // Extract JSON object by finding the outermost curly braces
-  const match = raw.match(/\{[\s\S]*\}/);
-  if (!match) {
-    console.error("No JSON braces found in raw content:", raw);
-    throw new Error("No JSON object found");
+  try {
+    return JSON.parse(sanitize(raw.trim()));
+  } catch (e) {}
+
+  // 2. Try Markdown block extraction (Best for Claude/GPT)
+  const mdMatch = raw.match(/```(?:json)?\s*([\s\S]*?)\s*```/);
+  if (mdMatch) {
+    try {
+      return JSON.parse(sanitize(mdMatch[1].trim()));
+    } catch (e) {}
   }
 
-  const clean = match[0];
-  try {
-    return JSON.parse(clean);
-  } catch (e) {
-    console.error("JSON Parse Error on extracted content:", clean);
-    throw e;
+  // 3. Fallback extraction (Brackets)
+  let firstObj = raw.indexOf('{');
+  let lastObj = raw.lastIndexOf('}');
+  let firstArr = raw.indexOf('[');
+  let lastArr = raw.lastIndexOf(']');
+
+  let candidates = [];
+  
+  if (firstObj !== -1 && lastObj > firstObj) {
+      candidates.push(raw.substring(firstObj, lastObj + 1));
   }
+  if (firstArr !== -1 && lastArr > firstArr) {
+      candidates.push(raw.substring(firstArr, lastArr + 1));
+  }
+  
+  // Sort by length to prefer the largest encompassing JSON structure
+  candidates.sort((a, b) => b.length - a.length);
+
+  for (let cand of candidates) {
+      try {
+          return JSON.parse(sanitize(cand));
+      } catch (e) {
+          // If the longest bracket match has a syntax error, we just keep trying
+      }
+  }
+
+  console.error("Critical Parsing Failure on AI AI Payload:", raw);
+  throw new Error("AI returned malformed data structure.");
 }

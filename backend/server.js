@@ -24,18 +24,28 @@ const PORT = 5000;
 const getProviders = () => ({
   OPENROUTER: {
     url: "https://openrouter.ai/api/v1/chat/completions",
-    model: "meta-llama/llama-3.3-70b-instruct:free",
+    models: [
+      "meta-llama/llama-3.3-70b-instruct:free", 
+      "google/gemini-flash-1.5:free", 
+      "mistralai/mistral-7b-instruct:free",
+      "microsoft/phi-3-medium-128k-instruct:free"
+    ],
     key: process.env.OPENROUTER_API_KEY
   },
   GEMINI: {
     url: "https://generativelanguage.googleapis.com/v1beta/models",
-    model: "gemini-2.0-flash",
+    model: "gemini-2.0-flash", 
+    fallbackModel: "gemini-1.5-flash", 
     key: process.env.GEMINI_API_KEY
   },
   OLLAMA: {
-    url: "https://ollama.com/v1/chat/completions",
-    model: "ministral-3:8b",
+    url: "https://api.novita.ai/v3/openai/chat/completions",
+    model: "meta-llama/llama-3.1-8b-instruct", 
     key: process.env.OLLAMA_API_KEY
+  },
+  POLLINATIONS: {
+    url: "https://text.pollinations.ai/",
+    model: "openai"
   },
   ANTHROPIC: {
     url: "https://api.anthropic.com/v1/messages",
@@ -214,6 +224,20 @@ async function callAnthropic(prompt, maxTokens, config) {
   return data.content[0].text;
 }
 
+async function callPollinations(prompt, maxTokens, config) {
+  const resp = await fetch(config.url, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      messages: [{ role: "user", content: prompt }],
+      model: config.model,
+      max_tokens: maxTokens
+    })
+  });
+  if (!resp.ok) throw new Error(`Pollinations Error: ${resp.status}`);
+  return (await resp.text()).trim();
+}
+
 async function callOpenAI(prompt, maxTokens, config) {
   const resp = await fetch(config.url, {
     method: "POST",
@@ -259,7 +283,8 @@ async function callGemini(prompt, maxTokens, config) {
 
 // ─── OPENROUTER CALLER (OpenAI-compatible) ───
 
-async function callOpenRouter(prompt, maxTokens, config) {
+async function callOpenRouter(prompt, maxTokens, config, specificModel = null) {
+  const modelToUse = specificModel || (Array.isArray(config.models) ? config.models[0] : config.model);
   const resp = await fetch(config.url, {
     method: "POST",
     headers: {
@@ -269,51 +294,69 @@ async function callOpenRouter(prompt, maxTokens, config) {
       "X-Title": "nyAI Legal Connect"
     },
     body: JSON.stringify({
-      model: config.model,
+      model: modelToUse,
       messages: [{ role: "user", content: prompt }],
       max_tokens: maxTokens
     })
   });
+
   if (!resp.ok) {
-    const errorText = await resp.text();
-    console.error(`OpenRouter Response Error (${resp.status}):`, errorText);
-    throw new Error(`OpenRouter Error: ${errorText}`);
+    const errorData = await resp.json().catch(() => ({}));
+    const errorMsg = errorData.error?.message || "Unknown OpenRouter Error";
+    throw new Error(`OpenRouter Error (${resp.status}): ${errorMsg}`);
   }
+
   const data = await resp.json();
-  return data.choices[0].message.content;
+  return data.choices?.[0]?.message?.content;
 }
 
 // ─── SMART AI DISPATCHER HELPER ───
 
-async function handleAIRequest(prompt, maxTokens = 1000) {
+async function handleAIRequest(prompt, maxTokens = 1500) {
   const PROVIDERS = getProviders();
   let result = null;
   let engine = "None";
 
-  // 1. Try OpenRouter (Primary - Multi-model gateway)
+  // 1. Try OpenRouter (Primary - iterating through free models)
   if (PROVIDERS.OPENROUTER.key) {
-    try {
-      result = await callOpenRouter(prompt, maxTokens, PROVIDERS.OPENROUTER);
-      engine = `OpenRouter (${PROVIDERS.OPENROUTER.model})`;
-      console.log(`✅ AI composed via ${engine}`);
-    } catch (e) { console.warn("OpenRouter fallback triggered:", e.message); }
+    const models = Array.isArray(PROVIDERS.OPENROUTER.models) ? PROVIDERS.OPENROUTER.models : [PROVIDERS.OPENROUTER.model];
+    for (const model of models) {
+      if (result) break;
+      try {
+        result = await callOpenRouter(prompt, maxTokens, PROVIDERS.OPENROUTER, model);
+        engine = `OpenRouter (${model})`;
+        console.log(`✅ AI composed via ${engine}`);
+      } catch (e) { 
+        console.warn(`OpenRouter (${model}) failed:`, e.message); 
+      }
+    }
   }
 
   // 2. Try Gemini (Google AI Free)
   if (!result && PROVIDERS.GEMINI.key) {
-    try {
-      result = await callGemini(prompt, maxTokens, PROVIDERS.GEMINI);
-      engine = "Google Gemini";
-      console.log(`✅ AI composed via ${engine}`);
-    } catch (e) { console.warn("Gemini fallback triggered:", e.message); }
+    const geminiModels = [PROVIDERS.GEMINI.model, PROVIDERS.GEMINI.fallbackModel].filter(Boolean);
+    for (const model of geminiModels) {
+      if (result) break;
+      try {
+        const config = { ...PROVIDERS.GEMINI, model };
+        result = await callGemini(prompt, maxTokens, config);
+        engine = `Google Gemini (${model})`;
+        console.log(`✅ AI composed via ${engine}`);
+      } catch (e) { 
+        console.warn(`Gemini (${model}) fallback triggered:`, e.message); 
+      }
+    }
   }
 
-  // 3. Try Ollama
+  // 3. Try Novita AI (labeled as OLLAMA for key compatibility)
   if (!result && PROVIDERS.OLLAMA.key) {
     try {
       result = await callOllama(prompt, maxTokens, PROVIDERS.OLLAMA);
-      engine = "Ollama Cloud";
-    } catch (e) { console.warn("Ollama fallback triggered:", e.message); }
+      engine = "Novita AI Cloud";
+      console.log(`✅ AI composed via ${engine}`);
+    } catch (e) { 
+      console.warn("Novita/Ollama fallback triggered:", e.message); 
+    }
   }
 
   // 4. Try Anthropic
@@ -321,7 +364,10 @@ async function handleAIRequest(prompt, maxTokens = 1000) {
     try {
       result = await callAnthropic(prompt, maxTokens, PROVIDERS.ANTHROPIC);
       engine = "Anthropic Claude";
-    } catch (e) { console.warn("Anthropic fallback triggered:", e.message); }
+      console.log(`✅ AI composed via ${engine}`);
+    } catch (e) { 
+      console.warn("Anthropic fallback triggered:", e.message); 
+    }
   }
 
   // 5. Try OpenAI
@@ -329,10 +375,24 @@ async function handleAIRequest(prompt, maxTokens = 1000) {
     try {
       result = await callOpenAI(prompt, maxTokens, PROVIDERS.OPENAI);
       engine = "OpenAI GPT-4";
-    } catch (e) { console.warn("Final fallback failed:", e.message); }
+      console.log(`✅ AI composed via ${engine}`);
+    } catch (e) { 
+      console.warn("Final fallback failed:", e.message); 
+    }
   }
 
-  if (!result) throw new Error("No AI provider keys available or services down.");
+  // 6. ULTIMATE FALLBACK: Pollinations (Truly Free, No Key)
+  if (!result) {
+    try {
+      result = await callPollinations(prompt, maxTokens, PROVIDERS.POLLINATIONS);
+      engine = "Pollinations AI (No-Key Fallback)";
+      console.log(`✅ AI composed via ${engine}`);
+    } catch (e) {
+      console.error("Pollinations final fallback failed:", e.message);
+    }
+  }
+
+  if (!result) throw new Error("All AI providers exhausted or misconfigured.");
   return { text: result, engine };
 }
 
@@ -1078,6 +1138,11 @@ Response Format (JSON ONLY):
 });
 
 
-app.listen(PORT, () => {
-  console.log(`Backend server running on http://localhost:${PORT}`);
-});
+// Export for Vercel
+export default app;
+
+if (process.env.NODE_ENV !== 'production' && !process.env.VERCEL) {
+  app.listen(PORT, () => {
+    console.log(`Backend server running on http://localhost:${PORT}`);
+  });
+}

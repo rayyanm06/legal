@@ -11,6 +11,7 @@ import LawyersPage from './pages/LawyersPage';
 import DashboardPage from './pages/DashboardPage';
 import AboutPage from './pages/AboutPage';
 import AuthPage from './pages/AuthPage';
+import PricingPage from './pages/PricingPage';
 import LegalLiteracyApp from './features/legal-literacy';
 
 // Navbar Component
@@ -29,7 +30,7 @@ const Navbar = ({ isLoggedIn, onLogout, userName }) => {
   // Landing routes (Public)
   const isLandingSection = ['/', '/about', '/login', '/signup'].includes(location.pathname);
   // Product routes (Authenticated)
-  const isProductSection = ['/chat', '/lawyers', '/learn', '/dashboard', '/documents'].includes(location.pathname);
+  const isProductSection = ['/chat', '/lawyers', '/learn', '/dashboard', '/documents', '/pricing'].includes(location.pathname);
 
   useEffect(() => {
     const handleScroll = () => {
@@ -57,10 +58,11 @@ const Navbar = ({ isLoggedIn, onLogout, userName }) => {
   ];
 
   const productLinks = [
-    { name: t('nav.aiTools'), path: '/chat', key: 'AI Tools' },
-    { name: t('nav.lawyers'), path: '/lawyers', key: 'Lawyers' },
-    { name: t('nav.lexArena'), path: '/learn', key: 'LexArena' },
-    { name: t('nav.dashboard'), path: '/dashboard', key: 'Dashboard' },
+    { name: t('nav.aiTools') || 'AI Tools', path: '/chat', key: 'AI Tools' },
+    { name: t('nav.lawyers') || 'Lawyers', path: '/lawyers', key: 'Lawyers' },
+    { name: t('nav.lexArena') || 'LexArena', path: '/learn', key: 'LexArena' },
+    { name: 'Pricing', path: '/pricing', key: 'Pricing' },
+    { name: t('nav.dashboard') || 'Dashboard', path: '/dashboard', key: 'Dashboard' },
   ];
 
   const navLinks = isProductSection ? productLinks : landingLinks;
@@ -103,7 +105,7 @@ const Navbar = ({ isLoggedIn, onLogout, userName }) => {
             </Link>
           ))}
           {isLoggedIn && !isProductSection && (
-            <Link to="/chat" className="text-offwhite/80 hover:text-lime transition-colors font-medium">
+            <Link to="/dashboard" className="text-offwhite/80 hover:text-lime transition-colors font-medium">
               {t('nav.dashboard')}
             </Link>
           )}
@@ -355,6 +357,7 @@ const Footer = () => (
           <li><Link to="/documents" className="hover:text-lime transition-colors">Document Analyzer</Link></li>
           <li><Link to="/documents" className="hover:text-lime transition-colors">Doc Generator</Link></li>
           <li><Link to="/lawyers" className="hover:text-lime transition-colors">Lawyer Connect</Link></li>
+          <li><Link to="/pricing" className="hover:text-lime transition-colors">Pricing</Link></li>
         </ul>
       </div>
 
@@ -450,49 +453,17 @@ function App() {
       {!isAuthPage && <Navbar isLoggedIn={isLoggedIn} onLogout={handleLogout} userName={userName} />}
       <Routes>
         <Route path="/" element={<LandingPage />} />
-        <Route 
-          path="/chat" 
-          element={
-            <ProtectedRoute isLoggedIn={isLoggedIn}>
-              <ChatPage />
-            </ProtectedRoute>
-          } 
-        />
-        <Route 
-          path="/documents" 
-          element={
-            <ProtectedRoute isLoggedIn={isLoggedIn}>
-              <DocumentsPage />
-            </ProtectedRoute>
-          } 
-        />
-        <Route 
-          path="/lawyers" 
-          element={
-            <ProtectedRoute isLoggedIn={isLoggedIn}>
-              <LawyersPage />
-            </ProtectedRoute>
-          } 
-        />
-        <Route 
-          path="/dashboard" 
-          element={
-            <ProtectedRoute isLoggedIn={isLoggedIn}>
-              <DashboardPage />
-            </ProtectedRoute>
-          } 
-        />
+        {/* Protected Feature Routes */}
+        <Route path="/chat" element={isLoggedIn ? <ChatPage /> : <Navigate to="/login" />} />
+        <Route path="/documents" element={isLoggedIn ? <DocumentsPage /> : <Navigate to="/login" />} />
+        <Route path="/lawyers" element={isLoggedIn ? <LawyersPage /> : <Navigate to="/login" />} />
+        <Route path="/learn/*" element={isLoggedIn ? <LegalLiteracyApp userEmail={userEmail} /> : <Navigate to="/login" />} />
+        <Route path="/dashboard" element={isLoggedIn ? <DashboardPage userName={userName} /> : <Navigate to="/login" />} />
+        <Route path="/pricing" element={isLoggedIn ? <PricingPage /> : <Navigate to="/login" />} />
+        
         <Route path="/about" element={<AboutPage />} />
         <Route path="/login" element={isLoggedIn ? <Navigate to="/chat" /> : <AuthPage setIsLoggedIn={setIsLoggedIn} setUserEmail={setUserEmail} />} />
         <Route path="/signup" element={isLoggedIn ? <Navigate to="/chat" /> : <AuthPage setIsLoggedIn={setIsLoggedIn} setUserEmail={setUserEmail} />} />
-        <Route 
-          path="/learn" 
-          element={
-            <ProtectedRoute isLoggedIn={isLoggedIn}>
-              <LegalLiteracyApp userEmail={userEmail} />
-            </ProtectedRoute>
-          } 
-        />
       </Routes>
       {!(isAuthPage || isChatPage) && <Footer />}
       {!(isAuthPage || isChatPage) && <SOSButton />}

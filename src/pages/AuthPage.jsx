@@ -8,6 +8,7 @@ import { Link, useNavigate } from 'react-router-dom';
 
 import { GoogleLogin } from '@react-oauth/google';
 import {jwtDecode} from 'jwt-decode';
+import { API_ENDPOINTS } from '../api/config';
 
 const AuthPage = ({ setIsLoggedIn, setUserEmail }) => {
   const [isLogin, setIsLogin] = useState(true);
@@ -24,10 +25,10 @@ const AuthPage = ({ setIsLoggedIn, setUserEmail }) => {
     setError("");
 
     try {
-      const endpoint = isLogin ? '/api/auth/login' : '/api/auth/register';
+      const endpoint = isLogin ? API_ENDPOINTS.AUTH.LOGIN : API_ENDPOINTS.AUTH.REGISTER;
       const payload = isLogin ? { email, password } : { email, password, name };
       
-      const response = await fetch(`http://localhost:5000${endpoint}`, {
+      const response = await fetch(endpoint, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(payload)
@@ -64,7 +65,7 @@ const AuthPage = ({ setIsLoggedIn, setUserEmail }) => {
       const generatedPassword = "google_oauth_fallback_" + (decoded.sub || decoded.email);
 
       // Attempt to login first
-      let response = await fetch('http://localhost:5000/api/auth/login', {
+      let response = await fetch(API_ENDPOINTS.AUTH.LOGIN, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ email: decoded.email, password: generatedPassword })
@@ -72,7 +73,7 @@ const AuthPage = ({ setIsLoggedIn, setUserEmail }) => {
 
       if (!response.ok) {
         // If login fails, try to register
-        response = await fetch('http://localhost:5000/api/auth/register', {
+        response = await fetch(API_ENDPOINTS.AUTH.REGISTER, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({

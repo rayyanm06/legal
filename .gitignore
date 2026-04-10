@@ -29,3 +29,11 @@ dist-ssr
 
 # Local data
 backend/users.json
+
+# Temporary / Development
+tests.js
+testsBackend.js
+testsResult.txt
+tmp-server.js
+upstream-*
+friend_server.js

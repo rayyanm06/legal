@@ -18,14 +18,48 @@
   --animate-pulse-slow: pulse 3s cubic-bezier(0.4, 0, 0.6, 1) infinite;
 }
 
-@keyframes float {
-  0%, 100% { transform: translateY(0); }
-  50% { transform: translateY(-10px); }
+@keyframes gavel-stammer {
+  0% { transform: rotate(0deg) translateY(0); }
+  20% { transform: rotate(-45deg) translateY(-4px); }
+  40% { transform: rotate(5deg) translateY(0); } /* Impact point */
+  50% { transform: rotate(-5deg) translateY(-1px); }
+  60% { transform: rotate(2deg) translateY(0); } /* Second contact */
+  100% { transform: rotate(0deg) translateY(0); }
+}
+
+@keyframes block-hit {
+  0%, 38% { transform: scale(1); background-color: rgba(13, 59, 46, 0.1); }
+  40% { transform: scale(0.95, 0.9); background-color: rgba(13, 59, 46, 0.3); }
+  45% { transform: scale(1.05, 1); background-color: rgba(13, 59, 46, 0.1); }
+  100% { transform: scale(1); }
+}
+
+@keyframes impact-ripple {
+  0%, 38% { transform: scale(0.5); opacity: 0; }
+  40% { transform: scale(1); opacity: 1; }
+  100% { transform: scale(2); opacity: 0; }
+}
+
+@keyframes pulse-dot {
+  0%, 100% { transform: scale(1); opacity: 0.5; }
+  50% { transform: scale(1.5); opacity: 1; }
 }
 
 @layer utilities {
   .animate-float {
     animation: float 3s ease-in-out infinite;
+  }
+  .animate-gavel {
+    animation: gavel-stammer 1.2s cubic-bezier(0.4, 0, 0.2, 1) infinite;
+    transform-origin: 85% 85%; /* Pivot at the handle base */
+    filter: drop-shadow(0 10px 15px rgba(0,0,0,0.3));
+  }
+  .animate-block-hit {
+    animation: block-hit 1.2s cubic-bezier(0.4, 0, 0.2, 1) infinite;
+    transform-style: preserve-3d;
+  }
+  .animate-ripple {
+    animation: impact-ripple 1.2s cubic-bezier(0.4, 0, 0.2, 1) infinite;
   }
 }
 

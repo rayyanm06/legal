@@ -4,8 +4,8 @@
 import React, { useState, useEffect } from 'react';
 import QuestionCard from './QuestionCard';
 import { askClaude, parseJSONResponse } from '../utils/aiService';
-
-const API_BASE = "http://localhost:5000";
+import GavelLoading from '../../../components/GavelLoading';
+import { API_ENDPOINTS } from '../../../api/config';
 
 const css = `
   @keyframes lexFadeIn { from{opacity:0;transform:translateY(16px)} to{opacity:1;transform:translateY(0)} }
@@ -88,7 +88,9 @@ Each question must be a real-world scenario set in India that a
 young adult aged 18-28 would actually face.
 
 Respond ONLY with a valid JSON array. No explanation, no markdown, 
-no backticks. Raw JSON only:
+no backticks. Raw JSON only.
+CRITICAL: Do NOT use ANY markdown formatting (like **bold** or *italic*) around the JSON keys or values. Strict JSON syntax only.
+
 [
   {
     "id": 1,
@@ -124,7 +126,7 @@ Do NOT repeat situations across questions.`;
     if (isCorrect) setScore(s => s + 1);
     
     // Track progress on backend for specific user
-    fetch(`${API_BASE}/progress`, {
+    fetch(API_ENDPOINTS.PROGRESS, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ 
@@ -272,11 +274,7 @@ Tone: like a friendly mentor, not a robot. Speak directly to them as "you".`;
     return (
       <div style={{ padding: '100px 20px', textAlign: 'center', fontFamily: "'Outfit',sans-serif" }}>
         <style>{css}</style>
-        <div style={{ fontSize: '3rem', animation: 'lexFadeIn 0.8s ease infinite alternate', marginBottom: '24px' }}>🤖</div>
-        <h3 style={{ fontFamily: "'Syne', sans-serif", fontSize: '1.5rem', fontWeight: 700, color: '#1a3a2a' }}>
-          Building your personalised quiz...
-        </h3>
-        <p style={{ color: '#6b7280', marginTop: '8px' }}>Drafting legal scenarios for {selectedTopics.join(', ')}</p>
+        <GavelLoading size="large" text="Court recess..." subtext={`Drafting legal scenarios for ${selectedTopics.join(', ')}`} />
       </div>
     );
   }
@@ -333,9 +331,8 @@ Tone: like a friendly mentor, not a robot. Speak directly to them as "you".`;
             </div>
 
             {aiLoading && (
-              <div style={{ color: '#4a9e6b', fontStyle: 'italic', fontFamily: "'Outfit'", fontSize: '0.9rem', display: 'flex', alignItems: 'center', gap: '8px' }}>
-                <span style={{ animation: 'lexAIPulse 1.2s ease-in-out infinite' }}>⚖️</span>
-                Analysing your performance...
+              <div className="flex justify-center py-4">
+                <GavelLoading size="small" text="Case files being reviewed" subtext="AI Mentor is analyzing your reasoning" />
               </div>
             )}
 
