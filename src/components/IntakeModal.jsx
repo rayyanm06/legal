@@ -5,6 +5,7 @@ import {
   CheckCircle2, Loader2, Send, ShieldCheck, AlertTriangle,
   Scale, FileText, Building, Briefcase, Shield, Gavel
 } from 'lucide-react';
+import { API_ENDPOINTS } from '../api/config';
 
 // Category-specific intake questions
 const CATEGORY_QUESTIONS = {
@@ -111,7 +112,7 @@ const IntakeModal = ({ isOpen, onClose, lawyer }) => {
     setSending(true);
     setError(null);
     try {
-      const response = await fetch('http://localhost:5000/api/send-lawyer-email', {
+      const response = await fetch(API_ENDPOINTS.SEND_EMAIL, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({

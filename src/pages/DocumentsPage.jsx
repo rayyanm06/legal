@@ -6,6 +6,7 @@ import {
   FileCheck, ShieldAlert, Sparkles, Layout, ChevronRight,
   ClipboardList, Scale, Trash2, Printer, ShieldCheck
 } from 'lucide-react';
+import GavelLoading from '../components/GavelLoading';
 
 const DocumentCard = ({ title, type, status, risk = "Low" }) => {
   const riskColors = {
@@ -125,17 +126,14 @@ const DocumentsPage = () => {
                   >
                     {isUploading && (
                       <div className="absolute inset-0 bg-white/90 backdrop-blur-sm z-10 flex flex-col items-center justify-center p-12">
-                         <div className="w-full max-w-sm h-3 bg-gray-100 rounded-full overflow-hidden mb-6">
+                         <GavelLoading size="large" text="Analyzing Clauses" subtext="Scanning for legal triggers & cross-referencing Penal Codes" />
+                         <div className="w-full max-w-sm h-1.5 bg-gray-100 rounded-full overflow-hidden mt-6">
                             <motion.div 
                                initial={{ width: 0 }}
                                animate={{ width: `${uploadProgress}%` }}
                                className="h-full bg-forest relative"
-                            >
-                               <div className="absolute inset-0 bg-gradient-to-r from-transparent via-lime/50 to-transparent animate-shimmer scale-x-150"></div>
-                            </motion.div>
+                            />
                          </div>
-                         <p className="text-lg font-black text-forest uppercase tracking-[0.3em] font-mono">Analyzing Clauses...</p>
-                         <p className="text-gray-400 text-xs font-bold mt-2 font-mono italic">OCR Running • Cross-referencing Penal Codes • mBart Translate Active</p>
                       </div>
                     )}
                     <div className="w-24 h-24 bg-gray-50 rounded-full flex items-center justify-center text-gray-300 group-hover:bg-lime/10 group-hover:text-lime transition-all mb-8 shadow-inner ring-1 ring-gray-100">

@@ -11,6 +11,8 @@ import {
 import { Link } from 'react-router-dom';
 import { jsPDF } from 'jspdf';
 import { useTranslation } from 'react-i18next';
+import { API_ENDPOINTS } from '../api/config';
+import GavelLoading from '../components/GavelLoading';
 
 // --- Sub-components for Tools ---
 
@@ -161,7 +163,7 @@ const LegalAssistant = () => {
     setIsTyping(true);
 
     try {
-      const response = await fetch("http://localhost:5000/api/legal-chat", {
+      const response = await fetch(API_ENDPOINTS.CHAT, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -248,13 +250,8 @@ const LegalAssistant = () => {
               <div className="w-10 h-10 rounded-xl flex-shrink-0 flex items-center justify-center shadow-lg bg-lime text-forest" style={{ marginTop: '2px' }}>
                 <Scale size={20} />
               </div>
-              <div className="px-6 py-5 rounded-[2rem] shadow-sm bg-white border border-gray-100 rounded-bl-sm">
-                <div className="flex gap-1.5 items-center">
-                  <div className="w-2 h-2 bg-forest/40 rounded-full animate-bounce" style={{ animationDelay: '0ms' }}></div>
-                  <div className="w-2 h-2 bg-forest/40 rounded-full animate-bounce" style={{ animationDelay: '150ms' }}></div>
-                  <div className="w-2 h-2 bg-forest/40 rounded-full animate-bounce" style={{ animationDelay: '300ms' }}></div>
-                  <span className="text-[10px] font-bold text-gray-300 uppercase tracking-widest ml-3">{t('chat.assistant.analyzing')}</span>
-                </div>
+              <div className="px-2 py-1 rounded-[2rem] shadow-sm bg-white border border-gray-100 rounded-bl-sm flex items-center">
+                <GavelLoading size="small" text={t('chat.assistant.analyzing') || "Thinking"} />
               </div>
             </div>
           </motion.div>
@@ -317,7 +314,7 @@ const DocumentAnalyzer = () => {
     setIsAnalyzing(true);
     setHasFile(true);
     try {
-      const res = await fetch("http://localhost:5000/api/analyze-document", {
+      const res = await fetch(API_ENDPOINTS.ANALYZE, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ documentText: textToAnalyze })
@@ -336,7 +333,7 @@ const DocumentAnalyzer = () => {
   const handleGenerateResponse = async () => {
     setIsGeneratingResponse(true);
     try {
-      const res = await fetch("http://localhost:5000/api/generate-response", {
+      const res = await fetch(API_ENDPOINTS.RESPONSE, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ documentText, analysisResult })
@@ -442,8 +439,7 @@ Landlord Signature: _______________________ Tenant Signature: __________________
             <div className="bg-white p-8 rounded-[2rem] border border-gray-100 shadow-sm relative min-h-[400px]">
               {isAnalyzing ? (
                  <div className="absolute inset-0 bg-white/80 backdrop-blur-sm z-10 flex flex-col items-center justify-center rounded-[2rem]">
-                    <div className="w-8 h-8 rounded-full border-4 border-lime border-t-forest animate-spin mb-4"></div>
-                    <p className="font-bold text-forest uppercase tracking-widest text-xs">AI Analyzing Document...</p>
+                    <GavelLoading size="large" text="AI Analyzing Document" subtext="Scanning for legal triggers & clauses" />
                  </div>
               ) : analysisResult && !analysisResult.error ? (
                 <>
@@ -584,7 +580,7 @@ const DocumentGenerator = () => {
     setIsGenerating(true);
     setStep(3);
     try {
-      const response = await fetch("http://localhost:5000/generate-document", {
+      const response = await fetch(API_ENDPOINTS.GEN_DOC, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ type: selectedType.title, details: formData })
@@ -706,13 +702,7 @@ const DocumentGenerator = () => {
 
                {isGenerating ? (
                  <div className="h-full flex flex-col items-center justify-center space-y-4 pt-32">
-                   <div className="relative">
-                      <div className="w-16 h-16 border-4 border-green-800/10 border-t-green-800 rounded-full animate-spin"></div>
-                      <div className="absolute inset-0 flex items-center justify-center">
-                         <FileText size={20} className="text-green-800 animate-pulse" />
-                      </div>
-                   </div>
-                   <p className="text-green-800/40 font-black uppercase tracking-widest text-[10px]">AI is drafting your {selectedType.title}...</p>
+                    <GavelLoading size="large" text={`Drafting ${selectedType.title}`} subtext="Assembling clauses & legal formatting" />
                  </div>
                ) : (
                  <div className="relative z-10 pt-24 pl-12 pr-4">
@@ -781,7 +771,7 @@ const CasePredictor = () => {
     setIsAnalyzing(true);
     setAnalyzed(false);
     try {
-      const response = await fetch("http://localhost:5000/predict-case", {
+      const response = await fetch(API_ENDPOINTS.PREDICT, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ description: `Category: ${selectedCategory}. ${description}` })
@@ -828,9 +818,13 @@ const CasePredictor = () => {
           <button 
             onClick={handleAnalyze}
             disabled={isAnalyzing}
-            className="w-full bg-forest text-lime py-5 rounded-[2rem] font-black uppercase tracking-widest text-lg shadow-xl shadow-forest/10 hover:scale-[1.01] transition-transform disabled:opacity-50"
+            className="w-full bg-forest text-lime py-5 rounded-[2rem] font-black uppercase tracking-widest text-lg shadow-xl shadow-forest/10 hover:scale-[1.01] transition-transform disabled:opacity-50 min-h-[80px] flex items-center justify-center"
           >
-            {isAnalyzing ? 'Analyzing Jurisprudence...' : 'Predict Outcome'}
+            {isAnalyzing ? (
+              <GavelLoading size="small" text="Analyzing Jurisprudence" color="#A8E63D" />
+            ) : (
+              'Predict Outcome'
+            )}
           </button>
         </section>
 
@@ -910,7 +904,7 @@ const FakeDocDetector = () => {
     setScanLogs(["Initializing forensic engine...", "Establishing secure connection...", "Analyzing logic nodes..."]);
     
     try {
-      const response = await fetch('http://localhost:5000/detect-fake-doc', {
+      const response = await fetch(API_ENDPOINTS.DETECT, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ docContent, docType })

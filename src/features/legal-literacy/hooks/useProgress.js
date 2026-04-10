@@ -1,9 +1,7 @@
 // useProgress.js - Custom React Hook for managing user integration with backend
 // Fetches local user data and provides utility function for POSTs
 
-import { useState, useEffect } from 'react';
-
-const API_BASE = "http://localhost:5000";
+import { API_ENDPOINTS } from '../../../api/config';
 
 export const useProgress = (userId = 'guest') => {
   const [data, setData] = useState({
@@ -18,7 +16,7 @@ export const useProgress = (userId = 'guest') => {
   const fetchProgress = async () => {
     setLoading(true);
     try {
-      const resp = await fetch(`${API_BASE}/progress/${userId}`);
+      const resp = await fetch(`${API_ENDPOINTS.PROGRESS}/${userId}`);
       if (!resp.ok) throw new Error("Failed to fetch");
       const result = await resp.json();
       setData({
@@ -41,7 +39,7 @@ export const useProgress = (userId = 'guest') => {
 
   const updateProgress = async (scenarioId, isCorrect) => {
     try {
-      await fetch(`${API_BASE}/progress`, {
+      await fetch(API_ENDPOINTS.PROGRESS, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ userId, scenarioId, isCorrect })

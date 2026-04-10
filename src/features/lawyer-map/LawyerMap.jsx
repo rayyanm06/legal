@@ -1,6 +1,8 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { GoogleMap, useJsApiLoader, Marker, InfoWindow } from '@react-google-maps/api';
 import { Star, Phone, MapPin, Scale, Clock, Globe } from 'lucide-react';
+import GavelLoading from '../../components/GavelLoading';
+import { API_ENDPOINTS } from '../../api/config';
 
 const containerStyle = {
   width: '100%',
@@ -59,7 +61,7 @@ const LawyerMap = ({ apiKey, onLawyersUpdate, selectedCategory }) => {
     const queryStr = selectedCategory !== 'All' ? `${selectedCategory} lawyer OR advocate OR legal` : 'lawyer OR advocate OR law firm';
     
     try {
-      const response = await fetch(`http://localhost:5000/api/lawyers?lat=${currentCenter.lat}&lng=${currentCenter.lng}&query=${encodeURIComponent(queryStr)}`);
+      const response = await fetch(`${API_ENDPOINTS.LAWYERS}?lat=${currentCenter.lat}&lng=${currentCenter.lng}&query=${encodeURIComponent(queryStr)}`);
       const payload = await response.json();
 
       if (payload.status === 'OK' && payload.results && payload.results.length > 0) {
@@ -138,7 +140,11 @@ const LawyerMap = ({ apiKey, onLawyersUpdate, selectedCategory }) => {
     }
   };
 
-  if (!isLoaded) return <div className="w-full h-full bg-gray-100 animate-pulse rounded-[2.5rem] flex items-center justify-center text-gray-400 font-black uppercase tracking-widest">Initialising Map...</div>;
+  if (!isLoaded) return (
+    <div className="w-full h-full bg-forest/5 rounded-[2.5rem] flex items-center justify-center">
+      <GavelLoading size="large" text="Opening Court Map" subtext="Locating local advocates via GPS" />
+    </div>
+  );
 
   return (
     <div className="relative w-full h-full">

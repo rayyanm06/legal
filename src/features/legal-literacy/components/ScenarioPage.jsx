@@ -1,8 +1,8 @@
 import React, { useState, useEffect } from 'react';
 import QuestionCard from './QuestionCard';
 import { askClaude, parseJSONResponse } from '../utils/aiService';
-
-const API_BASE = "http://localhost:5000";
+import GavelLoading from '../../../components/GavelLoading';
+import { API_ENDPOINTS } from '../../../api/config';
 
 const css = `
   @keyframes lexFadeIn { from{opacity:0;transform:translateY(16px)} to{opacity:1;transform:translateY(0)} }
@@ -18,7 +18,7 @@ export default function ScenarioPage({ userEmail, onComplete }) {
   const [genError, setGenError] = useState(null);
 
   useEffect(() => {
-    fetch(`${API_BASE}/scenarios`)
+    fetch(API_ENDPOINTS.SCENARIOS)
       .then(res => res.json())
       .then(data => {
         if (data && data.length > 0) {
@@ -30,7 +30,7 @@ export default function ScenarioPage({ userEmail, onComplete }) {
 
   const handleAnswer = (isCorrect) => {
     setHasAnswered(true);
-    fetch(`${API_BASE}/progress`, {
+    fetch(API_ENDPOINTS.PROGRESS, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ 
@@ -97,10 +97,7 @@ Respond with ONLY a JSON object:
     return (
       <div style={{ padding: '100px 20px', textAlign: 'center', fontFamily: "'Outfit',sans-serif" }}>
         <style>{css}</style>
-        <div style={{ fontSize: '3rem', animation: 'lexFadeIn 0.8s ease infinite alternate', marginBottom: '24px' }}>📁</div>
-        <h3 style={{ fontFamily: "'Syne', sans-serif", fontSize: '1.5rem', fontWeight: 700, color: '#1a3a2a' }}>
-          Opening Case Files...
-        </h3>
+        <GavelLoading size="large" text="Opening Case Files" subtext="Syncing current legal precedents and dossier records" />
       </div>
     );
   }
@@ -183,13 +180,7 @@ Respond with ONLY a JSON object:
           boxShadow: '0 4px 20px rgba(0,0,0,0.05)', maxWidth: '640px',
           margin: '0 auto', textAlign: 'center', borderTop: '4px solid #a8e63d'
         }}>
-           <div style={{
-              color: '#1a3a2a', fontStyle: 'italic',
-              fontSize: '1.2rem', display: 'flex', justifyContent: 'center', alignItems: 'center', gap: '12px'
-            }}>
-              <span style={{ animation: 'lexAIPulse 1.2s ease-in-out infinite', fontSize: '2rem' }}>⚖️</span>
-              AI is drafting a real-world scenario...
-            </div>
+           <GavelLoading size="large" text="Drafting Case" subtext="AI is building a unique real-world scenario for your ruling" />
         </div>
       ) : (
         <div key={scenarios[currentIdx]?.id} style={{ animation: 'lexFadeIn 0.3s ease' }}>

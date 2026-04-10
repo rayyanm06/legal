@@ -4,6 +4,7 @@
 import React, { useState } from 'react';
 import { modules as staticModules } from '../data/modules';
 import { askClaude, parseJSONResponse } from '../utils/aiService';
+import GavelLoading from '../../../components/GavelLoading';
 
 const css = `
   @keyframes lexFadeIn {
@@ -125,7 +126,9 @@ Create a short micro-learning module about: "${userTopic}"
 Write for a general audience aged 18-35 with no legal background.
 Use simple, conversational language. Set all examples in India.
 
-Respond ONLY with a JSON object:
+Respond ONLY with a valid JSON object.
+CRITICAL: Do NOT use ANY markdown formatting (like **bold** or *italic*) around the JSON keys or values. Strict JSON syntax only.
+
 {
   "id": ${Date.now()},
   "title": "clear title for this module",
@@ -244,10 +247,8 @@ Under 150 words.`;
         alignItems: 'start'
       }}>
         {isGenerating && (
-          <div className="lex-skeleton">
-            <div className="lex-skeleton-bar" style={{ height: '12px', width: '60%', marginBottom: '12px' }} />
-            <div className="lex-skeleton-bar" style={{ height: '8px', width: '90%', marginBottom: '8px' }} />
-            <div className="lex-skeleton-bar" style={{ height: '8px', width: '75%' }} />
+          <div className="lex-skeleton flex flex-col items-center justify-center min-h-[220px]">
+            <GavelLoading size="small" text="Drafting Scroll" subtext="Using AI to synthesize legal concepts" />
           </div>
         )}
 
@@ -405,9 +406,8 @@ Under 150 words.`;
         </div>
 
         {aiExLoading && (
-          <div style={{ color: '#1a3a2a', fontStyle: 'italic', fontSize: '1rem', display: 'flex', alignItems: 'center', gap: '10px' }}>
-            <span style={{ animation: 'lexAIPulse 1.2s ease-in-out infinite' }}>📜</span>
-            Decoding the legal scrolls...
+          <div className="py-6">
+            <GavelLoading size="small" text="Decoding Scroll" subtext="Simplifying complex legal terminology for you" />
           </div>
         )}
 
