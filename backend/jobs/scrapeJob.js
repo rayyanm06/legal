@@ -48,7 +48,8 @@ async function runScrapeCycle() {
     }
   }
 
-  console.log(`[ScrapeJob] ✅ Cycle complete. Total stored: ${totalStored} | Store size: ${getStoreSize()}`);
+  const storeSize = await getStoreSize();
+  console.log(`[ScrapeJob] ✅ Cycle complete. Total stored: ${totalStored} | Store size: ${storeSize}`);
 }
 
 // Schedule: run every day at 2:00 AM

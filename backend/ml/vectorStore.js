@@ -1,20 +1,17 @@
 /**
- * In-Memory Vector Store with Cosine Similarity
- * Stores case embeddings in memory with persistent search capability.
- * This avoids the need for a running ChromaDB server while keeping the
- * same API surface as specified. Can be swapped for ChromaDB later.
+ * MongoDB-backed Vector Store
+ * Persists case embeddings to MongoDB Atlas so data survives Vercel cold starts.
+ * Falls back to in-memory cache within the same serverless invocation.
+ *
+ * Embedding: hashed TF-IDF (512 dims, L2-normalised) — zero external dependencies.
  */
 
-// ─── Simple Embedding via TF-IDF-like term frequency ───────────────────────
-// Since @xenova/transformers requires ESM dynamic import and can be slow to
-// load on Vercel serverless, we use a fast, zero-dependency text vectorizer
-// that still captures meaningful semantic overlap for legal queries.
+import CourtCase from '../models/CourtCase.js';
+
+// ─── Embedder ─────────────────────────────────────────────────────────────────
 
 const VOCAB_SIZE = 512;
 
-/**
- * Hash a string token into a stable index 0–(VOCAB_SIZE-1)
- */
 function hashToken(token) {
   let hash = 5381;
   for (let i = 0; i < token.length; i++) {
@@ -23,10 +20,6 @@ function hashToken(token) {
   return Math.abs(hash) % VOCAB_SIZE;
 }
 
-/**
- * Convert text → fixed-length float vector using hashed term frequencies.
- * Includes legal-domain bigrams for better precision.
- */
 function textToVector(text = '') {
   const vec = new Float32Array(VOCAB_SIZE).fill(0);
   const tokens = text
@@ -35,18 +28,14 @@ function textToVector(text = '') {
     .split(/\s+/)
     .filter(t => t.length > 2);
 
-  // Unigrams
   for (const token of tokens) {
     vec[hashToken(token)] += 1;
   }
-
-  // Bigrams (pairs of adjacent tokens — captures "consumer court", "wrongful termination", etc.)
   for (let i = 0; i < tokens.length - 1; i++) {
-    const bigram = tokens[i] + '_' + tokens[i + 1];
-    vec[hashToken(bigram)] += 1.5; // bigrams weighted higher
+    vec[hashToken(tokens[i] + '_' + tokens[i + 1])] += 1.5;
   }
 
-  // L2-normalize
+  // L2 normalise
   let norm = 0;
   for (let i = 0; i < VOCAB_SIZE; i++) norm += vec[i] * vec[i];
   norm = Math.sqrt(norm) || 1;
@@ -55,70 +44,88 @@ function textToVector(text = '') {
   return vec;
 }
 
-/**
- * Cosine similarity between two Float32Array vectors
- */
 function cosineSimilarity(a, b) {
   let dot = 0;
-  for (let i = 0; i < a.length; i++) dot += a[i] * b[i];
-  return dot; // vectors are already L2-normalized
+  const len = Math.min(a.length, b.length);
+  for (let i = 0; i < len; i++) dot += a[i] * b[i];
+  return dot;
 }
 
-// ─── In-Memory Case Store ────────────────────────────────────────────────────
+// ─── In-process warm cache (speeds up repeat queries in same invocation) ───────
+const warmCache = new Map(); // caseId → document
 
-const caseStore = []; // { id, embedding, metadata }
-const seenIds = new Set();
+// ─── Public API ───────────────────────────────────────────────────────────────
 
 /**
- * Upsert a case into the in-memory vector store.
- * @param {object} caseObj - { title, court, date, outcome, url, snippet, domain }
+ * Upsert a case into MongoDB (and warm cache).
  */
 export async function upsertCase(caseObj) {
   try {
-    const id = caseObj.docId || caseObj.url || caseObj.title;
-    if (!id || seenIds.has(id)) return; // deduplicate
+    const caseId = caseObj.docId || caseObj.url || caseObj.title;
+    if (!caseId) return;
+    if (warmCache.has(caseId)) return; // already cached this invocation
 
     const text = `${caseObj.title} ${caseObj.snippet || ''} ${caseObj.outcome || ''}`;
-    const embedding = textToVector(text);
+    const embeddingFloat = textToVector(text);
+    const embedding = Array.from(embeddingFloat); // plain array for MongoDB
 
-    seenIds.add(id);
-    caseStore.push({
-      id,
+    const doc = {
+      caseId,
+      title: caseObj.title || 'Unknown',
+      court: caseObj.court || 'Unknown',
+      date: caseObj.date || 'Unknown',
+      outcome: caseObj.outcome || 'unknown',
+      url: caseObj.url || '',
+      snippet: (caseObj.snippet || '').slice(0, 500),
+      domain: caseObj.domain || 'general',
       embedding,
-      metadata: {
-        title: caseObj.title || 'Unknown',
-        court: caseObj.court || 'Unknown',
-        date: caseObj.date || 'Unknown',
-        outcome: caseObj.outcome || 'unknown',
-        url: caseObj.url || '',
-        domain: caseObj.domain || 'general',
-        snippet: (caseObj.snippet || '').slice(0, 500),
-      },
-    });
+    };
+
+    // Upsert into MongoDB
+    await CourtCase.findOneAndUpdate(
+      { caseId },
+      { $set: doc },
+      { upsert: true, new: true }
+    );
+
+    warmCache.set(caseId, doc);
   } catch (err) {
+    // Non-fatal: log but never crash
     console.warn('[VectorStore] upsertCase error:', err.message);
   }
 }
 
 /**
- * Find the top-n most similar cases to a query string.
- * @param {string} queryText
- * @param {number} n
- * @returns {Promise<Array>} - Array of case metadata objects, sorted by similarity
+ * Find top-n most similar cases to the query using cosine similarity.
+ * Loads up to 500 recent cases from MongoDB, ranks by similarity.
  */
 export async function findSimilarCases(queryText, n = 5) {
   try {
-    if (caseStore.length === 0) return [];
-
     const queryVec = textToVector(queryText);
 
-    const scored = caseStore.map(entry => ({
-      ...entry.metadata,
-      score: cosineSimilarity(queryVec, entry.embedding),
+    // Pull recent cases from MongoDB (limit to keep compute bounded)
+    const cases = await CourtCase.find({})
+      .sort({ createdAt: -1 })
+      .limit(500)
+      .lean();
+
+    if (cases.length === 0) return [];
+
+    const scored = cases.map(c => ({
+      title: c.title,
+      court: c.court,
+      date: c.date,
+      outcome: c.outcome,
+      url: c.url,
+      domain: c.domain,
+      score: c.embedding?.length > 0
+        ? cosineSimilarity(queryVec, c.embedding)
+        : 0,
     }));
 
     scored.sort((a, b) => b.score - a.score);
     return scored.slice(0, n);
+
   } catch (err) {
     console.warn('[VectorStore] findSimilarCases error:', err.message);
     return [];
@@ -126,8 +133,12 @@ export async function findSimilarCases(queryText, n = 5) {
 }
 
 /**
- * Get total number of cases in the store (for logging/debugging)
+ * Get total count of cases in the store.
  */
-export function getStoreSize() {
-  return caseStore.length;
+export async function getStoreSize() {
+  try {
+    return await CourtCase.countDocuments();
+  } catch {
+    return warmCache.size;
+  }
 }
