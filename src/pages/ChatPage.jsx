@@ -889,15 +889,26 @@ const CasePredictor = () => {
             {/* Procedural Timeline */}
             <div className="bg-white p-10 rounded-[3rem] border border-gray-100 relative overflow-hidden">
                <h4 className="text-[10px] font-black text-gray-400 uppercase tracking-widest mb-10">Procedural Timeline</h4>
-               <div className="flex justify-between items-center relative gap-4">
-                  <div className="absolute h-1 bg-lime/20 top-4 left-0 w-full z-0"></div>
-                  <div className="absolute h-1 bg-lime top-4 left-0 w-1/2 z-0"></div>
+               <div className="flex justify-between items-start relative px-10">
+                  {/* Background Track - perfectly centered at top-4 */}
+                  <div className="absolute h-[2px] bg-gray-100 top-4 left-[12%] right-[12%] z-0 rounded-full"></div>
+                  
+                  {/* Active Progress Line */}
+                  <div 
+                    className="absolute h-[2px] bg-lime top-4 left-[12%] z-0 transition-all duration-1000 rounded-full"
+                    style={{ width: '25%' }} 
+                  ></div>
+
                   {(Array.isArray(predictionData?.timeline) ? predictionData.timeline : ['Review Case', 'Send Notice', 'File in Court', 'Final Order']).map((step, i) => (
                     <div key={i} className="relative z-10 flex flex-col items-center gap-4 flex-1">
-                       <div className={`w-8 h-8 rounded-full flex items-center justify-center text-xs font-bold ${i <= 1 ? 'bg-lime text-forest' : 'bg-gray-100 text-gray-400'}`}>
+                       <div className={`w-8 h-8 rounded-full flex items-center justify-center text-[10px] font-black transition-all duration-500 ${i <= 1 ? 'bg-lime text-forest border-[3px] border-white shadow-sm' : 'bg-white text-gray-300 border-2 border-gray-100'}`}>
                          {i + 1}
                        </div>
-                       <p className={`text-[10px] font-black uppercase tracking-tight text-center ${i <= 1 ? 'text-forest font-bold' : 'text-gray-300'}`}>{step}</p>
+                       <div className="px-2">
+                         <p className={`text-[9px] leading-tight font-black uppercase tracking-wide text-center max-w-[140px] ${i <= 1 ? 'text-forest' : 'text-gray-300'}`}>
+                           {step}
+                         </p>
+                       </div>
                     </div>
                   ))}
                </div>
