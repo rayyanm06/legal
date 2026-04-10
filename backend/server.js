@@ -553,11 +553,11 @@ app.get('/api/lawyers', async (req, res) => {
   }
 });
 
-app.get('/scenarios', (req, res) => {
+app.get('/api/scenarios', (req, res) => {
   res.json(scenarios);
 });
 
-app.post('/progress', async (req, res) => {
+app.post('/api/progress', async (req, res) => {
   const { userId, scenarioId, isCorrect } = req.body;
   try {
     let user = null;
@@ -784,7 +784,7 @@ nyAI Legal Connect Platform
   }
 });
 
-app.post('/predict-case', async (req, res) => {
+app.post('/api/predict-case', async (req, res) => {
   const { description } = req.body;
   if (!description) return res.status(400).json({ error: "Case description is required." });
 
@@ -844,67 +844,7 @@ Case Description: "${description}"
   }
 });
 
-app.post('/predict-case', async (req, res) => {
-  const { description } = req.body;
-  if (!description) return res.status(400).json({ error: "Case description is required." });
-
-  try {
-     const prompt = `You are an expert Indian Legal AI. Based on the following brief case description, predict the potential outcome using principles from the Indian Penal Code, Civil Procedure Code, or relevant Indian laws.
-Predict realistic timelines, win probabilities, and procedure based broadly on typical Indian judiciary data.
-Provide your response strictly as a valid JSON object matching exactly this schema:
-{
-  "winProbability": "number% (e.g. 74%)",
-  "confidenceScale": numeric value between 0 and 100 representing the win probability,
-  "verdictType": "string like 'Strong Case', 'Weak Case', 'Moderate Case'",
-  "avgDuration": "string like '14 Months'",
-  "similarCases": "string like '312 Found'",
-  "complexity": "string like 'Low', 'Medium', 'Medium-High', 'High'",
-  "successAction": "string like 'Mediation', 'Litigation', 'Arbitration', 'Settlement'",
-  "timeline": ["Step 1", "Step 2", "Step 3", "Step 4"] (Array of exactly 4 brief steps in the process)
-}
-
-Case Description: "${description}"
-`;
-
-    // Free AI endpoint without API keys via Pollinations
-    const fetchRes = await fetch('https://text.pollinations.ai/', {
-      method: "POST",
-      headers: {"Content-Type": "application/json"},
-      body: JSON.stringify({
-        messages: [{role: "user", content: prompt}],
-        jsonMode: true
-      })
-    });
-    
-    const textOutput = await fetchRes.text();
-    let out;
-    try {
-      out = JSON.parse(textOutput);
-    } catch(err) {
-      // Clean up markdown block if pollinations wraps the json
-      const cleanJson = textOutput.replace(/```json/g, '').replace(/```/g, '').trim();
-      out = JSON.parse(cleanJson);
-    }
-
-    res.json(out);
-  } catch(e) {
-    console.error("Prediction Error:", e);
-    // fallback
-    res.json({
-           winProbability: "50%",
-           confidenceScale: 50,
-           verdictType: "Uncertain",
-           avgDuration: "24+ Months",
-           similarCases: "Insufficient Data",
-           complexity: "Unknown",
-           successAction: "Consult Lawyer",
-           timeline: ['Review Case', 'Send Notice', 'Start Hearing', 'Final Order'],
-           disclaimer: "Error during live prediction computation."
-    });
-  }
-});
-
-app.post('/generate-document', async (req, res) => {
+app.post('/api/generate-document', async (req, res) => {
   const { type, details } = req.body;
   if (!type || !details) return res.status(400).json({ error: "Document type and details are required." });
 
@@ -1069,7 +1009,7 @@ DEPONENT: ______________`
   }
 });
 
-app.post('/detect-fake-doc', async (req, res) => {
+app.post('/api/detect-fake-doc', async (req, res) => {
   const { docContent, docType } = req.body;
   if (!docContent) return res.status(400).json({ error: "Document content or description is required." });
 
