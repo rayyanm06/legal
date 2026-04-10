@@ -12,6 +12,15 @@ import mongoose from 'mongoose';
 import jwt from 'jsonwebtoken';
 import User from './models/User.js';
 
+// ─── ML PIPELINE — Case Strength Analyser ───────────────────────────────────
+import { searchCases } from './scrapers/indianKanoon.js';
+import { findSimilarCases, upsertCase } from './ml/vectorStore.js';
+import { predictOutcome } from './ml/outcomeModel.js';
+import scrapeJob from './jobs/scrapeJob.js';
+
+// Start background case-seeding job (runs once after 5s, then daily at 2am IST)
+scrapeJob.start();
+
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
 const app = express();
@@ -815,61 +824,108 @@ nyAI Legal Connect Platform
 });
 
 app.post('/api/predict-case', async (req, res) => {
-  const { description } = req.body;
+  const { description, state } = req.body;
   if (!description) return res.status(400).json({ error: "Case description is required." });
 
   try {
-     const prompt = `You are an expert Indian Legal AI. Based on the following brief case description, predict the potential outcome using principles from the Indian Penal Code, Civil Procedure Code, or relevant Indian laws.
-Predict realistic timelines, win probabilities, and procedure based broadly on typical Indian judiciary data.
-Provide your response strictly as a valid JSON object matching exactly this schema:
-{
-  "winProbability": "number% (e.g. 74%)",
-  "confidenceScale": numeric value between 0 and 100 representing the win probability,
-  "verdictType": "string like 'Strong Case', 'Weak Case', 'Moderate Case'",
-  "avgDuration": "string like '14 Months'",
-  "similarCases": "string like '312 Found'",
-  "complexity": "string like 'Low', 'Medium', 'Medium-High', 'High'",
-  "successAction": "string like 'Mediation', 'Litigation', 'Arbitration', 'Settlement'",
-  "timeline": ["Step 1", "Step 2", "Step 3", "Step 4"] (Array of exactly 4 brief steps in the process)
-}
+    // ── 1. Live search IndianKanoon for matching real cases ──────────────────
+    const liveCases = await searchCases(description, 8);
+    console.log(`[Predictor] Live search returned ${liveCases.length} cases`);
 
-Case Description: "${description}"
-`;
-
-    // Free AI endpoint without API keys via Pollinations
-    const fetchRes = await fetch('https://text.pollinations.ai/', {
-      method: "POST",
-      headers: {"Content-Type": "application/json"},
-      body: JSON.stringify({
-        messages: [{role: "user", content: prompt}],
-        jsonMode: true
-      })
-    });
-    
-    const textOutput = await fetchRes.text();
-    let out;
-    try {
-      out = JSON.parse(textOutput);
-    } catch(err) {
-      // Clean up markdown block if pollinations wraps the json
-      const cleanJson = textOutput.replace(/```json/g, '').replace(/```/g, '').trim();
-      out = JSON.parse(cleanJson);
+    // ── 2. Upsert live results into vector store for future queries ──────────
+    for (const c of liveCases) {
+      await upsertCase(c);
     }
 
-    res.json(out);
-  } catch(e) {
-    console.error("Prediction Error:", e);
-    // fallback
+    // ── 3. Find semantically similar cases from vector store ─────────────────
+    const similarCases = await findSimilarCases(description, 5);
+    console.log(`[Predictor] Found ${similarCases.length} similar cases in store`);
+
+    // ── 4. Run outcome model on similar cases ────────────────────────────────
+    const { strengthScore, verdictType, dataConfidence, outcomeBreakdown } = predictOutcome(
+      similarCases.length > 0 ? similarCases : liveCases
+    );
+
+    // ── 5. LLM generates procedural guidance grounded in real case context ───
+    const caseContext = (similarCases.length > 0 ? similarCases : liveCases)
+      .slice(0, 3)
+      .map(c => `- ${c.title || c.metadata?.title} (${c.court || c.metadata?.court}, ${c.date || c.metadata?.date}): ${c.outcome || c.metadata?.outcome}`)
+      .join('\n');
+
+    const guidancePrompt = `You are an Indian legal analyst. Based on these real similar cases:
+${caseContext || 'No direct case matches found — use general Indian legal principles.'}
+
+And this case description: "${description}"
+State: ${state || 'Not specified'}
+
+Respond ONLY with a valid JSON object (no markdown, no explanation):
+{
+  "applicableLaw": "Primary Indian Act and Section (e.g. Consumer Protection Act 2019, Section 35)",
+  "recommendedForum": "Specific court or forum to approach",
+  "successAction": "Mediation | Litigation | Arbitration | Settlement | Police Complaint | Consumer Forum",
+  "avgDuration": "e.g. 14 Months",
+  "timeline": ["Step 1", "Step 2", "Step 3", "Step 4"],
+  "evidenceChecklist": ["item 1", "item 2", "item 3"],
+  "riskFactors": ["item 1", "item 2"]
+}`;
+
+    const { text } = await handleAIRequest(guidancePrompt, 800);
+    let guidance = {};
+    try {
+      guidance = JSON.parse(text.replace(/```json|```/g, '').trim());
+    } catch(parseErr) {
+      console.warn('[Predictor] Guidance JSON parse failed, using defaults');
+    }
+
+    // ── 6. Build final enriched response ─────────────────────────────────────
     res.json({
-           winProbability: "50%",
-           confidenceScale: 50,
-           verdictType: "Uncertain",
-           avgDuration: "24+ Months",
-           similarCases: "Insufficient Data",
-           complexity: "Unknown",
-           successAction: "Consult Lawyer",
-           timeline: ['Review Case', 'Send Notice', 'Start Hearing', 'Final Order'],
-           disclaimer: "Error during live prediction computation."
+      // Strength score from real data
+      winProbability: `${Math.round(strengthScore)}%`,
+      confidenceScale: Math.round(strengthScore),
+      verdictType,
+      dataConfidence: `${Math.round(dataConfidence * 100)}%`,
+      casesAnalysed: similarCases.length + liveCases.length,
+      similarCases: (similarCases.length > 0 ? similarCases : liveCases).slice(0, 5).map(c => ({
+        title: c.title || c.metadata?.title || 'Unknown',
+        court: c.court || c.metadata?.court || 'Unknown',
+        date: c.date || c.metadata?.date || 'Unknown',
+        outcome: c.outcome || c.metadata?.outcome || 'unknown',
+        url: c.url || c.metadata?.url || '',
+      })),
+      outcomeBreakdown,
+      // LLM-generated procedural guidance
+      avgDuration: guidance.avgDuration || '12–24 Months',
+      applicableLaw: guidance.applicableLaw || 'Refer to relevant Indian Act',
+      recommendedForum: guidance.recommendedForum || 'Consult a qualified advocate',
+      successAction: guidance.successAction || 'Consult Lawyer',
+      timeline: guidance.timeline || ['Review Case', 'Send Legal Notice', 'File in Court', 'Final Order'],
+      evidenceChecklist: guidance.evidenceChecklist || [],
+      riskFactors: guidance.riskFactors || [],
+      // Meta
+      disclaimer: "Strength score is derived from real Indian court judgment patterns via IndianKanoon. Actual outcomes depend on evidence, legal representation, and the presiding authority. This is not legal advice.",
+      dataSource: "IndianKanoon.org",
+    });
+
+  } catch(err) {
+    console.error("[Predictor] Error:", err.message);
+    // Graceful fallback — never return a 500
+    res.json({
+      winProbability: "50%",
+      confidenceScale: 50,
+      verdictType: "Insufficient Data",
+      dataConfidence: "0%",
+      casesAnalysed: 0,
+      similarCases: [],
+      outcomeBreakdown: { allowed: 0, dismissed: 0, partial: 0, unknown: 0 },
+      avgDuration: "Unknown",
+      applicableLaw: "Refer to relevant Indian Act",
+      recommendedForum: "Consult a qualified advocate",
+      successAction: "Consult Lawyer",
+      timeline: ["Review Case", "Send Notice", "File in Court", "Await Order"],
+      evidenceChecklist: [],
+      riskFactors: [],
+      disclaimer: "Live data unavailable. Please try again shortly — our system is seeding case data.",
+      dataSource: "Fallback mode",
     });
   }
 });

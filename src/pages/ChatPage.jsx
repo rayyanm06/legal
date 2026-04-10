@@ -764,7 +764,10 @@ const CasePredictor = () => {
   const [isAnalyzing, setIsAnalyzing] = useState(false);
   const [description, setDescription] = useState("");
   const [selectedCategory, setSelectedCategory] = useState("Labour");
+  const [selectedState, setSelectedState] = useState("");
   const [predictionData, setPredictionData] = useState(null);
+
+  const INDIAN_STATES = ['Andhra Pradesh','Arunachal Pradesh','Assam','Bihar','Chhattisgarh','Goa','Gujarat','Haryana','Himachal Pradesh','Jharkhand','Karnataka','Kerala','Madhya Pradesh','Maharashtra','Manipur','Meghalaya','Mizoram','Nagaland','Odisha','Punjab','Rajasthan','Sikkim','Tamil Nadu','Telangana','Tripura','Uttar Pradesh','Uttarakhand','West Bengal','Delhi','Jammu & Kashmir'];
 
   const handleAnalyze = async () => {
     if (!description.trim()) return;
@@ -774,7 +777,10 @@ const CasePredictor = () => {
       const response = await fetch(API_ENDPOINTS.PREDICT, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ description: `Category: ${selectedCategory}. ${description}` })
+        body: JSON.stringify({
+          description: `Category: ${selectedCategory}. ${description}`,
+          state: selectedState || undefined,
+        })
       });
       const data = await response.json();
       setPredictionData(data);
@@ -815,13 +821,22 @@ const CasePredictor = () => {
             ))}
           </div>
 
+          <select
+            value={selectedState}
+            onChange={e => setSelectedState(e.target.value)}
+            className="w-full bg-gray-50 rounded-[2rem] px-8 py-4 border-none text-sm font-bold text-gray-600 mb-6 outline-none focus:ring-2 focus:ring-lime/50"
+          >
+            <option value="">Select your state (optional — improves accuracy)</option>
+            {INDIAN_STATES.map(s => <option key={s} value={s}>{s}</option>)}
+          </select>
+
           <button 
             onClick={handleAnalyze}
             disabled={isAnalyzing}
             className="w-full bg-forest text-lime py-5 rounded-[2rem] font-black uppercase tracking-widest text-lg shadow-xl shadow-forest/10 hover:scale-[1.01] transition-transform disabled:opacity-50 min-h-[80px] flex items-center justify-center"
           >
             {isAnalyzing ? (
-              <GavelLoading size="small" text="Analyzing Jurisprudence" color="#A8E63D" />
+              <GavelLoading size="small" text="Analyzing Real Cases" color="#A8E63D" />
             ) : (
               'Predict Outcome'
             )}
@@ -834,6 +849,7 @@ const CasePredictor = () => {
             animate={{ opacity: 1, y: 0 }}
             className="space-y-8"
           >
+            {/* Top Row: Score + Stats */}
             <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
               <div className="col-span-1 md:col-span-1 bg-forest rounded-[3rem] p-10 flex flex-col items-center justify-center text-center">
                 <div className="relative w-32 h-32 mb-6">
@@ -845,34 +861,38 @@ const CasePredictor = () => {
                       <span className="text-3xl font-bold text-white heading-display tracking-tighter">{predictionData?.winProbability || "0%"}</span>
                    </div>
                 </div>
-                <h4 className="text-white font-bold">Win Probability</h4>
+                <h4 className="text-white font-bold">Case Strength</h4>
                 <p className="text-[10px] text-lime font-black uppercase tracking-widest mt-1">{predictionData?.verdictType || "Unknown"}</p>
+                {predictionData?.dataConfidence && (
+                  <p className="text-[10px] text-white/40 font-bold uppercase tracking-widest mt-2">{predictionData.dataConfidence} data confidence</p>
+                )}
               </div>
 
               <div className="col-span-1 md:col-span-2 grid grid-cols-1 sm:grid-cols-2 gap-4">
                  {[
                    { label: 'Avg. Duration', val: predictionData?.avgDuration || 'Unknown', icon: Clock },
-                   { label: 'Similar Cases', val: predictionData?.similarCases || '0 Found', icon: Database },
-                   { label: 'Complexity', val: predictionData?.complexity || 'Medium', icon: AlertTriangle },
-                   { label: 'Success Action', val: predictionData?.successAction || 'Mediation', icon: Handshake }
+                   { label: 'Cases Analysed', val: predictionData?.casesAnalysed ? `${predictionData.casesAnalysed} Real Cases` : 'Processing', icon: Database },
+                   { label: 'Applicable Law', val: predictionData?.applicableLaw ? predictionData.applicableLaw.split(',')[0] : 'Unknown', icon: AlertTriangle },
+                   { label: 'Success Action', val: predictionData?.successAction || 'Consult Lawyer', icon: Handshake }
                  ].map((stat, i) => (
                    <div key={i} className="bg-white p-6 rounded-[2rem] border border-gray-100 flex items-center gap-4">
                       <div className="w-12 h-12 bg-lime/10 rounded-2xl flex items-center justify-center text-lime"><stat.icon size={20} /></div>
                       <div>
                         <p className="text-[10px] font-black text-gray-400 uppercase tracking-widest">{stat.label}</p>
-                        <p className="font-bold text-gray-900">{stat.val}</p>
+                        <p className="font-bold text-gray-900 text-sm leading-tight">{stat.val}</p>
                       </div>
                    </div>
                  ))}
               </div>
             </div>
 
+            {/* Procedural Timeline */}
             <div className="bg-white p-10 rounded-[3rem] border border-gray-100 relative overflow-hidden">
                <h4 className="text-[10px] font-black text-gray-400 uppercase tracking-widest mb-10">Procedural Timeline</h4>
                <div className="flex justify-between items-center relative gap-4">
                   <div className="absolute h-1 bg-lime/20 top-4 left-0 w-full z-0"></div>
                   <div className="absolute h-1 bg-lime top-4 left-0 w-1/2 z-0"></div>
-                  {(Array.isArray(predictionData?.timeline) ? predictionData.timeline : ['File FIR', 'District Court', 'High Court', 'Supreme']).map((step, i) => (
+                  {(Array.isArray(predictionData?.timeline) ? predictionData.timeline : ['Review Case', 'Send Notice', 'File in Court', 'Final Order']).map((step, i) => (
                     <div key={i} className="relative z-10 flex flex-col items-center gap-4 flex-1">
                        <div className={`w-8 h-8 rounded-full flex items-center justify-center text-xs font-bold ${i <= 1 ? 'bg-lime text-forest' : 'bg-gray-100 text-gray-400'}`}>
                          {i + 1}
@@ -882,8 +902,68 @@ const CasePredictor = () => {
                   ))}
                </div>
             </div>
+
+            {/* Evidence Checklist + Risk Factors */}
+            {(predictionData?.evidenceChecklist?.length > 0 || predictionData?.riskFactors?.length > 0) && (
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-6">
+                {predictionData?.evidenceChecklist?.length > 0 && (
+                  <div className="bg-white p-8 rounded-[2rem] border border-gray-100">
+                    <h4 className="text-[10px] font-black text-gray-400 uppercase tracking-widest mb-6">Evidence Checklist</h4>
+                    <ul className="space-y-3">
+                      {predictionData.evidenceChecklist.map((item, i) => (
+                        <li key={i} className="flex items-start gap-3 text-sm text-gray-700 font-medium">
+                          <span className="w-5 h-5 rounded-full bg-lime/20 text-forest flex items-center justify-center text-xs font-black flex-shrink-0 mt-0.5">{i+1}</span>
+                          {item}
+                        </li>
+                      ))}
+                    </ul>
+                  </div>
+                )}
+                {predictionData?.riskFactors?.length > 0 && (
+                  <div className="bg-white p-8 rounded-[2rem] border border-red-50">
+                    <h4 className="text-[10px] font-black text-red-300 uppercase tracking-widest mb-6">Risk Factors</h4>
+                    <ul className="space-y-3">
+                      {predictionData.riskFactors.map((item, i) => (
+                        <li key={i} className="flex items-start gap-3 text-sm text-gray-700 font-medium">
+                          <span className="w-5 h-5 rounded-full bg-red-50 text-red-400 flex items-center justify-center text-xs font-black flex-shrink-0 mt-0.5">!</span>
+                          {item}
+                        </li>
+                      ))}
+                    </ul>
+                  </div>
+                )}
+              </div>
+            )}
+
+            {/* Similar Real Cases */}
+            {predictionData?.similarCases?.length > 0 && typeof predictionData.similarCases[0] === 'object' && (
+              <div className="bg-white p-10 rounded-[3rem] border border-gray-100">
+                <h4 className="text-[10px] font-black text-gray-400 uppercase tracking-widest mb-6">Real Similar Cases (via IndianKanoon)</h4>
+                <div className="space-y-4">
+                  {predictionData.similarCases.map((c, i) => (
+                    <div key={i} className="flex items-start gap-4 p-4 bg-gray-50 rounded-2xl">
+                      <span className={`px-3 py-1 rounded-full text-[10px] font-black uppercase flex-shrink-0 ${
+                        c.outcome === 'allowed' || c.outcome === 'acquitted' ? 'bg-lime/20 text-forest' :
+                        c.outcome === 'dismissed' || c.outcome === 'convicted' ? 'bg-red-50 text-red-400' :
+                        'bg-gray-100 text-gray-400'
+                      }`}>{c.outcome}</span>
+                      <div className="flex-1 min-w-0">
+                        <p className="text-sm font-bold text-gray-800 truncate">{c.title}</p>
+                        <p className="text-[10px] text-gray-400 font-medium">{c.court} · {c.date}</p>
+                      </div>
+                      {c.url && (
+                        <a href={c.url} target="_blank" rel="noopener noreferrer" className="text-[10px] font-black text-lime uppercase tracking-widest flex-shrink-0 hover:underline">View →</a>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
             
-            <p className="text-center text-[10px] text-gray-300 font-bold uppercase tracking-widest italic">Disclaimer: Prediction is based on historical data patterns and is not a guarantee of legal outcome.</p>
+            <p className="text-center text-[10px] text-gray-300 font-bold uppercase tracking-widest italic">
+              {predictionData?.disclaimer || 'Prediction is based on historical data patterns and is not a guarantee of legal outcome.'}
+              {predictionData?.dataSource && ` · Source: ${predictionData.dataSource}`}
+            </p>
           </motion.div>
         )}
       </div>
