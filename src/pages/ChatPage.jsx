@@ -348,29 +348,66 @@ const DocumentAnalyzer = () => {
     }
   };
 
-  const handleSimulateUpload = () => {
-    const testDoc = `Sample Residential Rent Agreement (For Testing – Contains Intentional Flaws)
+  const handleFileUpload = async (e) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
 
-This Rent Agreement is made on the 5th day of January 2024 between: Landlord: Mr. Rajesh Sharma, residing at 45 Palm Residency, Mumbai. Tenant: Mr. Amit Verma, currently residing at an unspecified location in Mumbai. The Landlord hereby agrees to rent the property described below to the Tenant.
+    setIsAnalyzing(true);
+    setHasFile(true);
 
-1. Property Description The property being rented is Flat No. 204 located in Green Heights Building, Mumbai. (The exact address, building registration details, and floor plan are not specified.)
+    try {
+      let extractedText = '';
 
-2. Rent The Tenant agrees to pay a monthly rent of ₹20,000 or another amount mutually agreed upon later. The payment date may be on the 1st or any convenient day of the month.
+      if (file.name.endsWith('.pdf')) {
+        // Extract text from PDF using pdfjs-dist
+        const pdfjsLib = await import('pdfjs-dist');
+        pdfjsLib.GlobalWorkerOptions.workerSrc = `https://cdnjs.cloudflare.com/ajax/libs/pdf.js/${pdfjsLib.version}/pdf.worker.min.mjs`;
 
-3. Security Deposit The Tenant shall pay a refundable deposit of ₹50,000 which may or may not be returned depending on the Landlord's decision.
+        const arrayBuffer = await file.arrayBuffer();
+        const pdf = await pdfjsLib.getDocument({ data: arrayBuffer }).promise;
 
-4. Duration The rental term will start on 10 January 2024 and end sometime in 2025. Either party can terminate the agreement with "reasonable notice".
+        const pageTexts = [];
+        for (let i = 1; i <= pdf.numPages; i++) {
+          const page = await pdf.getPage(i);
+          const content = await page.getTextContent();
+          const pageText = content.items.map(item => item.str).join(' ');
+          pageTexts.push(pageText);
+        }
+        extractedText = pageTexts.join('\n\n');
+      } else {
+        // .txt, .docx (read as plain text)
+        extractedText = await file.text();
+      }
 
-5. Maintenance and Repairs Maintenance responsibilities will be handled by either the Tenant or Landlord depending on the situation.
+      if (!extractedText.trim()) {
+        setAnalysisResult({ error: true, summary: "Could not extract text from the uploaded file. The PDF may be image-based — try a text-based document." });
+        setIsAnalyzing(false);
+        return;
+      }
 
-6. Utilities Utility payments such as electricity, water, internet, and other bills will be paid by the Tenant unless otherwise decided later.
-
-7. Governing Law This agreement shall be governed by laws that apply where necessary.
-
-Landlord Signature: _______________________ Tenant Signature: _______________________ Date: _____________________________________`;
-    setDocumentText(testDoc);
-    // Automatically trigger analysis with the text once the file is "uploaded"
-    handleUpload(testDoc);
+      setDocumentText(extractedText);
+      // Now send extracted text to AI backend for real analysis
+      try {
+        const res = await fetch(API_ENDPOINTS.ANALYZE, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ documentText: extractedText })
+        });
+        const data = await res.json();
+        setAnalysisResult(data);
+        setResponseDoc("");
+      } catch (err) {
+        console.error(err);
+        setAnalysisResult({ error: true, summary: "Failed to reach AI analyzer." });
+      }
+    } catch (err) {
+      console.error("File read error:", err);
+      setAnalysisResult({ error: true, summary: "Failed to read the uploaded file: " + err.message });
+    } finally {
+      setIsAnalyzing(false);
+      // Reset file input so the same file can be re-uploaded
+      if (fileInputRef.current) fileInputRef.current.value = '';
+    }
   };
 
   return (
@@ -385,7 +422,7 @@ Landlord Signature: _______________________ Tenant Signature: __________________
           <input 
              type="file" 
              ref={fileInputRef} 
-             onChange={handleSimulateUpload} 
+             onChange={handleFileUpload} 
              className="hidden" 
              accept=".pdf,.docx,.txt"
           />
