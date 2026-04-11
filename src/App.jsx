@@ -27,6 +27,7 @@ const Navbar = ({ isLoggedIn, onLogout, userName }) => {
   const isLawyersPage = location.pathname === '/lawyers';
   const isLearnPage = location.pathname === '/learn';
   const isChatPage = location.pathname === '/chat';
+  const isLawyerPage = location.pathname === '/lawyer-dashboard';
 
   // Landing routes (Public)
   const isLandingSection = ['/', '/about', '/login', '/signup'].includes(location.pathname);
@@ -69,11 +70,12 @@ const Navbar = ({ isLoggedIn, onLogout, userName }) => {
   const navLinks = isProductSection ? productLinks : landingLinks;
 
   // Navbar Styling Logic
-  const navDark = isProductSection || isAboutPage || isLawyersPage || isScrolled;
-  const hideNav = false; // Always visible as per request
+  // Lawyer page is always solid forest green, never transparent
+  const navDark = isLawyerPage || isProductSection || isAboutPage || isLawyersPage || isScrolled;
+  const hideNav = false;
 
   return (
-    <nav className={`fixed top-0 w-full z-50 transition-all duration-300 ${navDark ? (isProductSection ? 'bg-forest shadow-lg' : 'bg-forest/95 backdrop-blur-md shadow-lg') : 'bg-transparent'} py-3`}
+    <nav className={`fixed top-0 w-full z-50 transition-all duration-300 ${navDark ? 'bg-forest shadow-lg' : 'bg-transparent'} py-3`}
       style={{ transform: hideNav ? 'translateY(-100%)' : 'translateY(0)' }}
     >
       <div className="max-w-7xl mx-auto px-6 flex justify-between items-center">
@@ -84,85 +86,86 @@ const Navbar = ({ isLoggedIn, onLogout, userName }) => {
           <span className="text-2xl font-bold text-white tracking-tight">ny<span className="text-lime">AI</span></span>
         </Link>
 
-        {/* Desktop Nav */}
-        <div className="hidden md:flex items-center gap-8">
-          {navLinks.map((link) => (
-            <Link 
-              key={link.name} 
-              to={link.path} 
-              onClick={(e) => {
-                if (link.key === 'Home' && location.pathname === '/') {
-                  e.preventDefault();
-                  window.scrollTo({ top: 0, behavior: 'smooth' });
-                } else if (link.key === 'Features' && location.pathname === '/') {
-                  e.preventDefault();
-                  const target = document.getElementById('features');
-                  if (target) target.scrollIntoView({ behavior: 'smooth' });
-                }
-              }}
-              className="text-offwhite/80 hover:text-lime transition-colors font-medium cursor-pointer"
-            >
-              {link.name}
-            </Link>
-          ))}
-          {isLoggedIn && !isProductSection && (
-            <Link to="/dashboard" className="text-offwhite/80 hover:text-lime transition-colors font-medium">
-              {t('nav.dashboard')}
-            </Link>
-          )}
-        </div>
+        {/* Desktop Nav — hidden on lawyer portal */}
+        {!isLawyerPage && (
+          <div className="hidden md:flex items-center gap-8">
+            {navLinks.map((link) => (
+              <Link 
+                key={link.name} 
+                to={link.path} 
+                onClick={(e) => {
+                  if (link.key === 'Home' && location.pathname === '/') {
+                    e.preventDefault();
+                    window.scrollTo({ top: 0, behavior: 'smooth' });
+                  } else if (link.key === 'Features' && location.pathname === '/') {
+                    e.preventDefault();
+                    const target = document.getElementById('features');
+                    if (target) target.scrollIntoView({ behavior: 'smooth' });
+                  }
+                }}
+                className="text-offwhite/80 hover:text-lime transition-colors font-medium cursor-pointer"
+              >
+                {link.name}
+              </Link>
+            ))}
+            {isLoggedIn && !isProductSection && (
+              <Link to="/dashboard" className="text-offwhite/80 hover:text-lime transition-colors font-medium">
+                {t('nav.dashboard')}
+              </Link>
+            )}
+          </div>
+        )}
 
         <div className="hidden md:flex items-center gap-4">
-          {/* Language Dropdown */}
-          <div className="relative" ref={langRef}>
-            <button 
-              onClick={() => setLangOpen(!langOpen)}
-              className="flex items-center gap-1.5 text-offwhite hover:text-white font-medium px-2.5 py-1.5 rounded-lg hover:bg-white/10 transition-all"
-            >
-              <Globe size={18} />
-              <span className="text-sm">{currentLang.native}</span>
-              <ChevronDown size={14} className={`transition-transform ${langOpen ? 'rotate-180' : ''}`} />
-            </button>
-            <AnimatePresence>
-              {langOpen && (
-                <motion.div
-                  initial={{ opacity: 0, y: -8, scale: 0.95 }}
-                  animate={{ opacity: 1, y: 0, scale: 1 }}
-                  exit={{ opacity: 0, y: -8, scale: 0.95 }}
-                  transition={{ duration: 0.15 }}
-                  className="absolute right-0 mt-2 w-52 bg-charcoal/95 backdrop-blur-xl border border-white/10 rounded-xl shadow-2xl overflow-hidden z-50"
-                >
-                  <div className="py-1 max-h-80 overflow-y-auto">
-                    {LANGUAGES.map((lang) => (
-                      <button
-                        key={lang.code}
-                        onClick={() => { i18n.changeLanguage(lang.code); setLangOpen(false); }}
-                        className={`w-full text-left px-4 py-2.5 flex items-center justify-between hover:bg-white/10 transition-colors ${
-                          i18n.language === lang.code ? 'bg-lime/10 text-lime' : 'text-offwhite/80'
-                        }`}
-                      >
-                        <span className="font-medium">{lang.native}</span>
-                        <span className="text-xs text-offwhite/40">{lang.label}</span>
-                      </button>
-                    ))}
-                  </div>
-                </motion.div>
-              )}
-            </AnimatePresence>
-          </div>
-          
-          {!isLoggedIn && (
-            <>
-              <Link to="/login" className="text-offwhite hover:text-white font-medium px-4">{t('nav.login')}</Link>
-              <Link to="/signup" className="bg-lime hover:bg-lime-hover text-forest font-bold px-6 py-2.5 rounded-lg transition-all shadow-md">
-                {t('nav.tryFree')}
-              </Link>
-            </>
+          {/* Language Dropdown — hidden on lawyer portal */}
+          {!isLawyerPage && (
+            <div className="relative" ref={langRef}>
+              <button 
+                onClick={() => setLangOpen(!langOpen)}
+                className="flex items-center gap-1.5 text-offwhite hover:text-white font-medium px-2.5 py-1.5 rounded-lg hover:bg-white/10 transition-all"
+              >
+                <Globe size={18} />
+                <span className="text-sm">{currentLang.native}</span>
+                <ChevronDown size={14} className={`transition-transform ${langOpen ? 'rotate-180' : ''}`} />
+              </button>
+              <AnimatePresence>
+                {langOpen && (
+                  <motion.div
+                    initial={{ opacity: 0, y: -8, scale: 0.95 }}
+                    animate={{ opacity: 1, y: 0, scale: 1 }}
+                    exit={{ opacity: 0, y: -8, scale: 0.95 }}
+                    transition={{ duration: 0.15 }}
+                    className="absolute right-0 mt-2 w-52 bg-charcoal/95 backdrop-blur-xl border border-white/10 rounded-xl shadow-2xl overflow-hidden z-50"
+                  >
+                    <div className="py-1 max-h-80 overflow-y-auto">
+                      {LANGUAGES.map((lang) => (
+                        <button
+                          key={lang.code}
+                          onClick={() => { i18n.changeLanguage(lang.code); setLangOpen(false); }}
+                          className={`w-full text-left px-4 py-2.5 flex items-center justify-between hover:bg-white/10 transition-colors ${
+                            i18n.language === lang.code ? 'bg-lime/10 text-lime' : 'text-offwhite/80'
+                          }`}
+                        >
+                          <span className="font-medium">{lang.native}</span>
+                          <span className="text-xs text-offwhite/40">{lang.label}</span>
+                        </button>
+                      ))}
+                    </div>
+                  </motion.div>
+                )}
+              </AnimatePresence>
+            </div>
           )}
-
-          {isLoggedIn && (
+          
+          {/* Lawyer portal: show initials + logout, no login/try-free */}
+          {isLawyerPage ? (
             <div className="flex items-center gap-3 pl-4 border-l border-white/10">
-              <div className="w-8 h-8 rounded-full bg-lime flex items-center justify-center text-forest font-bold text-xs uppercase">{userName ? userName.substring(0, 2) : 'US'}</div>
+              <div className="w-8 h-8 rounded-full bg-lime flex items-center justify-center text-forest font-bold text-xs uppercase">
+                {(localStorage.getItem('nyai_lawyer_name') || 'LW').substring(0, 2)}
+              </div>
+              <span className="text-offwhite/70 text-sm font-medium hidden lg:block">
+                Adv. {localStorage.getItem('nyai_lawyer_name') || ''}
+              </span>
               <button 
                 onClick={onLogout}
                 className="text-offwhite/60 hover:text-white transition-colors"
@@ -171,6 +174,29 @@ const Navbar = ({ isLoggedIn, onLogout, userName }) => {
                 <LogOut size={18} />
               </button>
             </div>
+          ) : (
+            <>
+              {!isLoggedIn && (
+                <>
+                  <Link to="/login" className="text-offwhite hover:text-white font-medium px-4">{t('nav.login')}</Link>
+                  <Link to="/signup" className="bg-lime hover:bg-lime-hover text-forest font-bold px-6 py-2.5 rounded-lg transition-all shadow-md">
+                    {t('nav.tryFree')}
+                  </Link>
+                </>
+              )}
+              {isLoggedIn && (
+                <div className="flex items-center gap-3 pl-4 border-l border-white/10">
+                  <div className="w-8 h-8 rounded-full bg-lime flex items-center justify-center text-forest font-bold text-xs uppercase">{userName ? userName.substring(0, 2) : 'US'}</div>
+                  <button 
+                    onClick={onLogout}
+                    className="text-offwhite/60 hover:text-white transition-colors"
+                    title="Logout"
+                  >
+                    <LogOut size={18} />
+                  </button>
+                </div>
+              )}
+            </>
           )}
         </div>
 
