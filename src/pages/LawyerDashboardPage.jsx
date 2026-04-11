@@ -493,11 +493,21 @@ const LawyerDashboardPage = () => {
               <div className="bg-white p-8 rounded-[2.5rem] border border-gray-100 shadow-xl shadow-gray-200/40">
                 <div className="flex justify-between items-center mb-6">
                   <h3 className="text-sm font-black text-gray-400 uppercase tracking-widest italic">Case Documents</h3>
-                  <label className="bg-forest text-lime px-5 py-3 rounded-2xl text-[10px] font-black uppercase tracking-widest flex items-center gap-2 hover:scale-105 transition-all cursor-pointer shadow-xl shadow-forest/20">
+                  <button
+                    type="button"
+                    onClick={() => fileRef.current?.click()}
+                    className="bg-forest text-lime px-5 py-3 rounded-2xl text-[10px] font-black uppercase tracking-widest flex items-center gap-2 hover:scale-105 transition-all cursor-pointer shadow-xl shadow-forest/20"
+                  >
                     {uploading ? <Loader size={14} className="animate-spin" /> : <Upload size={14} />}
                     {uploading ? 'Uploading...' : 'Upload File'}
-                    <input ref={fileRef} type="file" accept=".txt,.doc,.docx,.pdf" className="hidden" onChange={handleFileUpload} />
-                  </label>
+                  </button>
+                  <input
+                    ref={fileRef}
+                    type="file"
+                    accept=".txt,.doc,.docx,.pdf"
+                    style={{ position: 'absolute', width: 0, height: 0, opacity: 0, pointerEvents: 'none' }}
+                    onChange={handleFileUpload}
+                  />
                 </div>
 
                 <div className="border-4 border-dashed border-gray-100 rounded-[2rem] p-10 text-center mb-6 hover:border-lime/40 transition-all">

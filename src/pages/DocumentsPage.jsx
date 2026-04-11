@@ -1,12 +1,13 @@
-import React, { useState } from 'react';
+import React, { useState, useRef } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { 
   FileText, Upload, CheckCircle2, AlertTriangle, XCircle, 
   ArrowRight, Download, Search, Info, Plus, Play, 
   FileCheck, ShieldAlert, Sparkles, Layout, ChevronRight,
-  ClipboardList, Scale, Trash2, Printer, ShieldCheck
+  ClipboardList, Scale, Trash2, Printer, ShieldCheck, Loader
 } from 'lucide-react';
 import GavelLoading from '../components/GavelLoading';
+import { API_BASE_URL } from '../api/config';
 
 const DocumentCard = ({ title, type, status, risk = "Low" }) => {
   const riskColors = {
@@ -31,9 +32,8 @@ const DocumentCard = ({ title, type, status, risk = "Low" }) => {
       </div>
       <h3 className="text-lg font-bold text-gray-900 group-hover:text-forest transition-colors">{title}</h3>
       <p className="text-xs text-gray-400 font-bold uppercase tracking-widest mt-1 italic">{type}</p>
-      
       <div className="mt-8 flex items-center justify-between">
-        <div className="flex items-center gap-1.5 text-[10px] font-black text-gray-400 uppercase tracking-widest flex items-center">
+        <div className="flex items-center gap-1.5 text-[10px] font-black text-gray-400 uppercase tracking-widest">
           <CheckCircle2 size={12} className="text-green-500" /> {status}
         </div>
         <div className="flex gap-2">
@@ -47,32 +47,11 @@ const DocumentCard = ({ title, type, status, risk = "Low" }) => {
 
 const DocumentsPage = () => {
   const [activeTab, setActiveTab] = useState("analyze");
-  const [isUploading, setIsUploading] = useState(false);
-  const [uploadProgress, setUploadProgress] = useState(0);
+  const [isAnalyzing, setIsAnalyzing] = useState(false);
   const [analysisResult, setAnalysisResult] = useState(null);
-
-  const handleUpload = () => {
-    setIsUploading(true);
-    let progress = 0;
-    const interval = setInterval(() => {
-      progress += 10;
-      setUploadProgress(progress);
-      if (progress >= 100) {
-        clearInterval(interval);
-        setIsUploading(false);
-        setAnalysisResult({
-          score: 72,
-          risk: "Medium",
-          summary: "This rental agreement is mostly standard but contains a potentially unfair eviction clause and lacks a clear dispute resolution mechanism.",
-          flags: [
-            { type: "Danger", title: "Immediate Eviction Clause", desc: "Clause 14.2 allows eviction without the mandated 30-day notice period under state law." },
-            { type: "Warning", title: "Maintenance Liability", desc: "Shifts all structural maintenance costs to the tenant, which is non-standard." },
-            { type: "Safe", title: "Rent Escalation", desc: "Capped at 10% annually, which aligns with market standards." }
-          ]
-        });
-      }
-    }, 200);
-  };
+  const [fileName, setFileName] = useState('');
+  const [error, setError] = useState('');
+  const fileInputRef = useRef();
 
   const documentTypes = [
     { title: "Rental Agreement", icon: FileText, desc: "Residential or Commercial leases" },
@@ -82,6 +61,53 @@ const DocumentsPage = () => {
     { title: "NDA", icon: ShieldAlert, desc: "Non-disclosure agreements" },
     { title: "Employment Contract", icon: Layout, desc: "For new hires or freelancers" }
   ];
+
+  const handleFileChange = async (e) => {
+    const file = e.target.files[0];
+    if (!file) return;
+    setFileName(file.name);
+    setError('');
+    setIsAnalyzing(true);
+    setAnalysisResult(null);
+
+    try {
+      const text = await file.text();
+      if (!text.trim()) {
+        setError('File appears to be empty or unreadable. Try a .txt or .docx file.');
+        setIsAnalyzing(false);
+        return;
+      }
+
+      const res = await fetch(`${API_BASE_URL}/api/analyze-document`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ documentText: text })
+      });
+
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || 'Analysis failed');
+
+      const riskFlags = data.riskFlags || [];
+      const dangers = riskFlags.filter(f => f.type === 'Danger').length;
+      const warnings = riskFlags.filter(f => f.type === 'Warning').length;
+      const penalty = (dangers * 20) + (warnings * 8);
+      const score = Math.max(0, Math.min(100, 100 - penalty));
+      const risk = score >= 70 ? 'Low' : score >= 45 ? 'Medium' : 'High';
+
+      setAnalysisResult({
+        ...data,
+        score,
+        risk,
+        flags: riskFlags
+      });
+    } catch (err) {
+      console.error('Analyze error:', err);
+      setError(err.message || 'Failed to analyze. Check your connection.');
+    } finally {
+      setIsAnalyzing(false);
+      if (fileInputRef.current) fileInputRef.current.value = '';
+    }
+  };
 
   return (
     <div className="pt-32 pb-20 px-6 min-h-screen bg-offwhite">
@@ -118,21 +144,34 @@ const DocumentsPage = () => {
                exit={{ opacity: 0, scale: 0.95 }}
                className="grid grid-cols-1 lg:grid-cols-3 gap-12"
             >
+              {/* Real hidden file input — triggered programmatically */}
+              <input
+                ref={fileInputRef}
+                type="file"
+                accept=".txt,.doc,.docx,.pdf,.md"
+                style={{ position: 'absolute', width: 0, height: 0, opacity: 0, pointerEvents: 'none' }}
+                onChange={handleFileChange}
+              />
+
               <div className="lg:col-span-2">
+                {error && (
+                  <div className="mb-6 p-4 bg-red-50 border border-red-200 rounded-2xl text-sm font-bold text-red-600 flex items-center gap-3">
+                    <ShieldAlert size={18} /> {error}
+                    <button onClick={() => setError('')} className="ml-auto text-red-400 hover:text-red-600"><XCircle size={16} /></button>
+                  </div>
+                )}
+
                 {!analysisResult ? (
                   <div 
-                    onClick={handleUpload}
-                    className="aspect-[16/10] bg-white border-4 border-dashed border-gray-100 rounded-[3rem] flex flex-col items-center justify-center p-12 text-center group cursor-pointer hover:border-lime transition-all overflow-hidden relative"
+                    onClick={() => !isAnalyzing && fileInputRef.current?.click()}
+                    className={`aspect-[16/10] bg-white border-4 border-dashed rounded-[3rem] flex flex-col items-center justify-center p-12 text-center group overflow-hidden relative transition-all ${isAnalyzing ? 'cursor-wait border-lime' : 'cursor-pointer hover:border-lime border-gray-100'}`}
                   >
-                    {isUploading && (
-                      <div className="absolute inset-0 bg-white/90 backdrop-blur-sm z-10 flex flex-col items-center justify-center p-12">
+                    {isAnalyzing && (
+                      <div className="absolute inset-0 bg-white/95 backdrop-blur-sm z-10 flex flex-col items-center justify-center p-12">
                          <GavelLoading size="large" text="Analyzing Clauses" subtext="Scanning for legal triggers & cross-referencing Penal Codes" />
-                         <div className="w-full max-w-sm h-1.5 bg-gray-100 rounded-full overflow-hidden mt-6">
-                            <motion.div 
-                               initial={{ width: 0 }}
-                               animate={{ width: `${uploadProgress}%` }}
-                               className="h-full bg-forest relative"
-                            />
+                         <div className="flex items-center gap-3 mt-6 text-sm text-gray-400 font-medium">
+                           <Loader size={16} className="animate-spin text-forest" />
+                           Reading {fileName}…
                          </div>
                       </div>
                     )}
@@ -140,62 +179,69 @@ const DocumentsPage = () => {
                       <Upload size={40} className="group-hover:scale-110 transition-transform" />
                     </div>
                     <h2 className="text-3xl font-bold text-gray-900 mb-4">Upload Document</h2>
-                    <p className="text-gray-400 max-w-sm mb-10 text-lg">Drag & drop your PDF, DOCX, or even a photo of a handwritten document.</p>
-                    <button className="bg-forest text-offwhite font-black px-10 py-5 rounded-2xl hover:bg-forest-light transform hover:scale-105 transition-all shadow-2xl shadow-forest/20 flex items-center gap-4">
+                    <p className="text-gray-400 max-w-sm mb-10 text-lg">Click anywhere here to select a .txt, .docx, or .pdf file for AI analysis.</p>
+                    <button
+                      type="button"
+                      onClick={(e) => { e.stopPropagation(); fileInputRef.current?.click(); }}
+                      className="bg-forest text-offwhite font-black px-10 py-5 rounded-2xl hover:bg-forest-light transform hover:scale-105 transition-all shadow-2xl shadow-forest/20 flex items-center gap-4"
+                    >
                        Select from Device <ArrowRight size={24} className="text-lime" />
                     </button>
                     <div className="mt-12 flex gap-8">
-                       <span className="flex items-center gap-2 text-[10px] font-black text-gray-300 uppercase tracking-widest"><ShieldCheck size={14} className="text-green-500" /> Safe & Secure</span>
+                       <span className="flex items-center gap-2 text-[10px] font-black text-gray-300 uppercase tracking-widest"><ShieldCheck size={14} className="text-green-500" /> Safe &amp; Secure</span>
                        <span className="flex items-center gap-2 text-[10px] font-black text-gray-300 uppercase tracking-widest"><Search size={14} className="text-blue-500" /> Deep Clause Analysis</span>
                     </div>
                   </div>
                 ) : (
-                  <div className="bg-white rounded-[3rem] border border-gray-100 shadow-2xl overflow-hidden min-h-[600px] flex flex-col">
+                  <div className="bg-white rounded-[3rem] border border-gray-100 shadow-2xl overflow-hidden flex flex-col">
                      <div className="bg-gray-50 p-6 border-b border-gray-100 flex justify-between items-center">
                         <div className="flex items-center gap-4">
                            <FileText size={20} className="text-forest" />
-                           <h3 className="font-bold text-gray-900">Rental_Agreement_V4.pdf</h3>
-                           <span className="text-[10px] bg-white border border-gray-200 px-2 py-1 rounded font-black text-gray-400 uppercase">2.4 MB</span>
+                           <h3 className="font-bold text-gray-900">{fileName || 'Analyzed Document'}</h3>
+                           {analysisResult.documentType && (
+                             <span className="text-[10px] bg-lime/20 border border-lime/30 px-2 py-1 rounded font-black text-forest uppercase">{analysisResult.documentType}</span>
+                           )}
                         </div>
-                        <div className="flex gap-2">
-                           <button onClick={() => setAnalysisResult(null)} className="p-2 border border-gray-200 rounded-xl text-gray-400 hover:text-red-500 transition-all"><Trash2 size={18} /></button>
-                           <button className="p-2 bg-forest text-lime rounded-xl flex items-center gap-2 text-sm font-bold px-4">Download PDF <Download size={16} /></button>
-                        </div>
+                        <button 
+                          onClick={() => { setAnalysisResult(null); setFileName(''); setError(''); }}
+                          className="p-2 border border-gray-200 rounded-xl text-gray-400 hover:text-red-500 transition-all"
+                        >
+                          <Trash2 size={18} />
+                        </button>
                      </div>
-                     <div className="flex-1 p-12 bg-gray-100 flex items-center justify-center">
-                        <div className="w-full max-w-md aspect-[1/1.414] bg-white shadow-2xl border border-gray-200 p-8 rounded-lg">
-                           <div className="space-y-4 opacity-10 filter blur-[1px]">
-                              {[...Array(20)].map((_, i) => (
-                                <div key={i} className={`h-2 bg-gray-200 rounded-full ${i % 3 === 0 ? 'w-2/3' : 'w-full'}`}></div>
-                              ))}
-                           </div>
-                           <div className="absolute inset-0 flex items-center justify-center p-8">
-                              <div className="space-y-12 w-full">
-                                 <motion.div 
-                                    initial={{ opacity: 0, x: 20 }}
-                                    animate={{ opacity: 1, x: 0 }}
-                                    className="bg-red-50 border border-red-200 p-4 rounded-xl shadow-lg relative left-12"
-                                 >
-                                    <p className="text-[10px] font-black text-red-600 uppercase mb-1">Clause 14.2: Illegal Eviction</p>
-                                    <p className="text-[11px] text-red-900 leading-tight">Landlord cannot evict without 30 days notice under State Act.</p>
-                                 </motion.div>
-                                 <motion.div 
-                                    initial={{ opacity: 0, x: -20 }}
-                                    animate={{ opacity: 1, x: 0 }}
-                                    transition={{ delay: 0.2 }}
-                                    className="bg-green-50 border border-green-200 p-4 rounded-xl shadow-lg relative -left-12"
-                                 >
-                                    <p className="text-[10px] font-black text-green-600 uppercase mb-1">Clause 8.1: Rent Cap</p>
-                                    <p className="text-[11px] text-green-900 leading-tight">Fair market escalation rate of 10%.</p>
-                                 </motion.div>
-                              </div>
-                           </div>
-                        </div>
-                     </div>
+
+                     {analysisResult.textPreview && (
+                       <div className="p-8 border-b border-gray-50">
+                         <p className="text-[10px] font-black text-gray-400 uppercase tracking-widest mb-3">Document Preview</p>
+                         <p className="text-sm text-gray-600 leading-relaxed italic bg-gray-50 p-4 rounded-xl border border-gray-100">"{analysisResult.textPreview}"</p>
+                       </div>
+                     )}
+
+                     {analysisResult.keyClauses?.length > 0 && (
+                       <div className="p-8 border-b border-gray-50">
+                         <p className="text-[10px] font-black text-gray-400 uppercase tracking-widest mb-4">Key Clauses Identified</p>
+                         <ul className="space-y-2">
+                           {analysisResult.keyClauses.map((clause, i) => (
+                             <li key={i} className="flex items-start gap-3 text-sm text-gray-700">
+                               <CheckCircle2 size={16} className="text-forest flex-shrink-0 mt-0.5" />
+                               {clause}
+                             </li>
+                           ))}
+                         </ul>
+                       </div>
+                     )}
+
+                     {analysisResult.summary && (
+                       <div className="p-8">
+                         <p className="text-[10px] font-black text-gray-400 uppercase tracking-widest mb-3">Legal Summary</p>
+                         <p className="text-sm text-gray-700 leading-relaxed">{analysisResult.summary}</p>
+                       </div>
+                     )}
                   </div>
                 )}
               </div>
 
+              {/* Sidebar */}
               <div className="space-y-8">
                  <div className="bg-forest noise-overlay p-10 rounded-[3rem] border border-white/10 shadow-2xl relative overflow-hidden">
                     <h4 className="text-white text-[10px] font-black uppercase tracking-widest mb-6 border-b border-white/5 pb-4">Legal Health Score</h4>
@@ -205,7 +251,7 @@ const DocumentsPage = () => {
                              <circle cx="96" cy="96" r="88" stroke="currentColor" strokeWidth="8" fill="transparent" className="text-white/5" />
                              <motion.circle 
                                 cx="96" cy="96" r="88" stroke="currentColor" strokeWidth="12" fill="transparent" 
-                                className={analysisResult ? (analysisResult.risk === 'High' ? 'text-red-500' : 'text-amber-400') : 'text-lime'}
+                                className={analysisResult ? (analysisResult.risk === 'High' ? 'text-red-500' : analysisResult.risk === 'Medium' ? 'text-amber-400' : 'text-lime') : 'text-lime/20'}
                                 strokeDasharray="553"
                                 initial={{ strokeDashoffset: 553 }}
                                 animate={{ strokeDashoffset: 553 - (553 * (analysisResult?.score || 0) / 100) }}
@@ -213,35 +259,39 @@ const DocumentsPage = () => {
                              />
                           </svg>
                           <div className="absolute inset-0 flex flex-col items-center justify-center">
-                             <span className="text-5xl font-black text-white heading-display">{analysisResult?.score || 0}%</span>
-                             <span className="text-[10px] font-black text-white/40 uppercase tracking-widest mt-2">{analysisResult?.risk || 'N/A'} Risk</span>
+                             <span className="text-5xl font-black text-white heading-display">{analysisResult?.score != null ? `${analysisResult.score}%` : '—'}</span>
+                             <span className="text-[10px] font-black text-white/40 uppercase tracking-widest mt-2">{analysisResult?.risk || 'No file'} Risk</span>
                           </div>
                        </div>
                        <p className="text-white/60 text-sm text-center italic leading-relaxed">
-                          {analysisResult?.summary || "Upload a document to see risk score and analysis summary."}
+                          {analysisResult?.summary?.substring(0, 120) || "Upload a document to see risk score."}
+                          {(analysisResult?.summary?.length || 0) > 120 ? '…' : ''}
                        </p>
                     </div>
                  </div>
 
-                 {analysisResult && (
+                 {analysisResult?.flags?.length > 0 && (
                    <div className="space-y-4">
-                      <h4 className="text-[10px] font-black text-gray-400 uppercase tracking-widest px-4">Flagged Clauses</h4>
+                      <h4 className="text-[10px] font-black text-gray-400 uppercase tracking-widest px-4">Risk Flags</h4>
                       {analysisResult.flags.map((flag, i) => (
-                        <div key={i} className="bg-white p-5 rounded-2xl border border-gray-100 flex gap-4 group hover:border-lime/50 transition-all cursor-pointer">
+                        <div key={i} className="bg-white p-5 rounded-2xl border border-gray-100 flex gap-4 hover:border-lime/50 transition-all">
                            <div className={`w-10 h-10 rounded-xl flex items-center justify-center flex-shrink-0 ${flag.type === 'Danger' ? 'bg-red-50 text-red-500' : flag.type === 'Safe' ? 'bg-green-50 text-green-500' : 'bg-amber-50 text-amber-500'}`}>
                               {flag.type === 'Danger' ? <ShieldAlert size={20} /> : flag.type === 'Safe' ? <CheckCircle2 size={20} /> : <AlertTriangle size={20} />}
                            </div>
                            <div>
                               <h5 className="text-xs font-black text-gray-900 mb-1 flex items-center gap-2">
-                                 {flag.title} 
-                                 <span className={`text-[8px] font-black px-1.5 py-0.5 rounded uppercase ${flag.type === 'Danger' ? 'bg-red-500 text-white' : 'bg-gray-100 text-gray-400'}`}>{flag.type}</span>
+                                 {flag.title}
+                                 <span className={`text-[8px] font-black px-1.5 py-0.5 rounded uppercase ${flag.type === 'Danger' ? 'bg-red-500 text-white' : flag.type === 'Safe' ? 'bg-green-500 text-white' : 'bg-amber-500 text-white'}`}>{flag.type}</span>
                               </h5>
                               <p className="text-[10px] text-gray-500 leading-normal">{flag.desc}</p>
                            </div>
                         </div>
                       ))}
-                      <button className="w-full bg-lime text-forest font-black py-4 rounded-2xl shadow-xl shadow-lime/10 hover:bg-lime-hover transform hover:scale-102 transition-all flex items-center justify-center gap-3 mt-6">
-                        Ask AI to fix this <Sparkles size={18} />
+                      <button
+                        onClick={() => { setAnalysisResult(null); setFileName(''); fileInputRef.current?.click(); }}
+                        className="w-full bg-lime text-forest font-black py-4 rounded-2xl shadow-xl shadow-lime/10 hover:bg-lime-hover transform hover:scale-102 transition-all flex items-center justify-center gap-3 mt-6"
+                      >
+                        Analyze Another <Sparkles size={18} />
                       </button>
                    </div>
                  )}
