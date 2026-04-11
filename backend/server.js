@@ -31,25 +31,25 @@ const PORT = 5000;
 
 // ─── AI PROVIDER CONFIG ───
 const getProviders = () => ({
+  GEMINI: {
+    url: "https://generativelanguage.googleapis.com/v1beta/models",
+    model: "gemini-2.0-flash",
+    fallbackModel: "gemini-1.5-flash",
+    key: process.env.GEMINI_API_KEY
+  },
   OPENROUTER: {
     url: "https://openrouter.ai/api/v1/chat/completions",
+    // Only fastest/most-reliable free models — cut slow ones
     models: [
-      "meta-llama/llama-3.3-70b-instruct:free", 
-      "google/gemini-flash-1.5:free", 
+      "google/gemini-flash-1.5:free",
+      "meta-llama/llama-3.3-70b-instruct:free",
       "mistralai/mistral-7b-instruct:free",
-      "microsoft/phi-3-medium-128k-instruct:free"
     ],
     key: process.env.OPENROUTER_API_KEY
   },
-  GEMINI: {
-    url: "https://generativelanguage.googleapis.com/v1beta/models",
-    model: "gemini-2.0-flash", 
-    fallbackModel: "gemini-1.5-flash", 
-    key: process.env.GEMINI_API_KEY
-  },
   OLLAMA: {
     url: "https://api.novita.ai/v3/openai/chat/completions",
-    model: "meta-llama/llama-3.1-8b-instruct", 
+    model: "meta-llama/llama-3.1-8b-instruct",
     key: process.env.OLLAMA_API_KEY
   },
   POLLINATIONS: {
@@ -67,6 +67,14 @@ const getProviders = () => ({
     key: process.env.OPENAI_API_KEY
   }
 });
+
+// ─── TIMEOUT WRAPPER ─── Prevents any slow provider from blocking the chain
+function withTimeout(promise, ms = 12000, label = '') {
+  const timer = new Promise((_, reject) =>
+    setTimeout(() => reject(new Error(`${label} timed out after ${ms}ms`)), ms)
+  );
+  return Promise.race([promise, timer]);
+}
 
 // ─── MONGODB CONNECTION ───
 const MONGO_URI = process.env.MONGO_URI || 'mongodb://localhost:27017/nyai';
@@ -325,79 +333,80 @@ async function handleAIRequest(prompt, maxTokens = 1500) {
   const PROVIDERS = getProviders();
   let result = null;
   let engine = "None";
+  const TIMEOUT_MS = 12000; // 12s hard timeout per provider
 
-  // 1. Try OpenRouter (Primary - iterating through free models)
-  if (PROVIDERS.OPENROUTER.key) {
-    const models = Array.isArray(PROVIDERS.OPENROUTER.models) ? PROVIDERS.OPENROUTER.models : [PROVIDERS.OPENROUTER.model];
-    for (const model of models) {
-      if (result) break;
-      try {
-        result = await callOpenRouter(prompt, maxTokens, PROVIDERS.OPENROUTER, model);
-        engine = `OpenRouter (${model})`;
-        console.log(`✅ AI composed via ${engine}`);
-      } catch (e) { 
-        console.warn(`OpenRouter (${model}) failed:`, e.message); 
-      }
-    }
-  }
-
-  // 2. Try Gemini (Google AI Free)
+  // 1. FASTEST: Try Gemini first (we have a key, it's sub-3s)
   if (!result && PROVIDERS.GEMINI.key) {
     const geminiModels = [PROVIDERS.GEMINI.model, PROVIDERS.GEMINI.fallbackModel].filter(Boolean);
     for (const model of geminiModels) {
       if (result) break;
       try {
         const config = { ...PROVIDERS.GEMINI, model };
-        result = await callGemini(prompt, maxTokens, config);
+        result = await withTimeout(callGemini(prompt, maxTokens, config), TIMEOUT_MS, `Gemini(${model})`);
         engine = `Google Gemini (${model})`;
-        console.log(`✅ AI composed via ${engine}`);
-      } catch (e) { 
-        console.warn(`Gemini (${model}) fallback triggered:`, e.message); 
+        console.log(`✅ AI via ${engine}`);
+      } catch (e) {
+        console.warn(`Gemini (${model}) failed:`, e.message);
       }
     }
   }
 
-  // 3. Try Novita AI (labeled as OLLAMA for key compatibility)
+  // 2. Try OpenRouter free models with timeout
+  if (!result && PROVIDERS.OPENROUTER.key) {
+    const models = Array.isArray(PROVIDERS.OPENROUTER.models) ? PROVIDERS.OPENROUTER.models : [PROVIDERS.OPENROUTER.model];
+    for (const model of models) {
+      if (result) break;
+      try {
+        result = await withTimeout(callOpenRouter(prompt, maxTokens, PROVIDERS.OPENROUTER, model), TIMEOUT_MS, `OpenRouter(${model})`);
+        engine = `OpenRouter (${model})`;
+        console.log(`✅ AI via ${engine}`);
+      } catch (e) {
+        console.warn(`OpenRouter (${model}) failed:`, e.message);
+      }
+    }
+  }
+
+  // 3. Novita AI
   if (!result && PROVIDERS.OLLAMA.key) {
     try {
-      result = await callOllama(prompt, maxTokens, PROVIDERS.OLLAMA);
+      result = await withTimeout(callOllama(prompt, maxTokens, PROVIDERS.OLLAMA), TIMEOUT_MS, 'Novita');
       engine = "Novita AI Cloud";
-      console.log(`✅ AI composed via ${engine}`);
-    } catch (e) { 
-      console.warn("Novita/Ollama fallback triggered:", e.message); 
+      console.log(`✅ AI via ${engine}`);
+    } catch (e) {
+      console.warn("Novita failed:", e.message);
     }
   }
 
-  // 4. Try Anthropic
+  // 4. Anthropic
   if (!result && PROVIDERS.ANTHROPIC.key) {
     try {
-      result = await callAnthropic(prompt, maxTokens, PROVIDERS.ANTHROPIC);
+      result = await withTimeout(callAnthropic(prompt, maxTokens, PROVIDERS.ANTHROPIC), TIMEOUT_MS, 'Anthropic');
       engine = "Anthropic Claude";
-      console.log(`✅ AI composed via ${engine}`);
-    } catch (e) { 
-      console.warn("Anthropic fallback triggered:", e.message); 
+      console.log(`✅ AI via ${engine}`);
+    } catch (e) {
+      console.warn("Anthropic failed:", e.message);
     }
   }
 
-  // 5. Try OpenAI
+  // 5. OpenAI
   if (!result && PROVIDERS.OPENAI.key) {
     try {
-      result = await callOpenAI(prompt, maxTokens, PROVIDERS.OPENAI);
-      engine = "OpenAI GPT-4";
-      console.log(`✅ AI composed via ${engine}`);
-    } catch (e) { 
-      console.warn("Final fallback failed:", e.message); 
+      result = await withTimeout(callOpenAI(prompt, maxTokens, PROVIDERS.OPENAI), TIMEOUT_MS, 'OpenAI');
+      engine = "OpenAI";
+      console.log(`✅ AI via ${engine}`);
+    } catch (e) {
+      console.warn("OpenAI failed:", e.message);
     }
   }
 
-  // 6. ULTIMATE FALLBACK: Pollinations (Truly Free, No Key)
+  // 6. Last resort: Pollinations (no key, slowest)
   if (!result) {
     try {
-      result = await callPollinations(prompt, maxTokens, PROVIDERS.POLLINATIONS);
-      engine = "Pollinations AI (No-Key Fallback)";
-      console.log(`✅ AI composed via ${engine}`);
+      result = await withTimeout(callPollinations(prompt, maxTokens, PROVIDERS.POLLINATIONS), 25000, 'Pollinations');
+      engine = "Pollinations AI";
+      console.log(`✅ AI via ${engine}`);
     } catch (e) {
-      console.error("Pollinations final fallback failed:", e.message);
+      console.error("Pollinations failed:", e.message);
     }
   }
 
@@ -503,7 +512,7 @@ Respond ONLY with a valid JSON object strictly matching this format (no markdown
 Document Text:
 ${documentText.substring(0, 6000)}`;
 
-    const { text, engine } = await handleAIRequest(prompt, 2000);
+    const { text, engine } = await handleAIRequest(prompt, 1200);
     
     let parsedData;
     try {
@@ -1038,25 +1047,13 @@ DEPONENT: ______________`
   };
 
   try {
-    const prompt = `Draft a high-quality, professional, and long Indian ${type} Legal Document. 
-    Use a 11-month lease format for Rent Agreements. Include proper clauses for: Parties, Term, Rent, Deposit, Maintenance, Notice Period, and Signatures. 
-    Details: ${JSON.stringify(details)}
-    Output in a professional legal style, NOT a JSON object. Ensure it is at least 600 words long.`;
+    // Use handleAIRequest (Gemini-first fast path) instead of raw Pollinations
+    const prompt = `You are an expert Indian Solicitor. Draft a professional Indian ${type} legal document.
+Details: ${JSON.stringify(details)}
+Rules: Return ONLY the document text. No explanations. No JSON. No markdown fences. Minimum 500 words. Include signature blocks.`;
 
-    const fetchRes = await fetch('https://text.pollinations.ai/', {
-      method: "POST",
-      headers: {"Content-Type": "application/json"},
-      body: JSON.stringify({
-        messages: [
-          {role: "system", content: "You are an expert Indian Solicitor. You draft real-world, binding legal documents. You only return the document text itself, no explanations, no JSON, no reasoning."},
-          {role: "user", content: prompt}
-        ],
-        model: "openai",
-        jsonMode: false
-      })
-    });
-    
-    let rawOutput = (await fetchRes.text()).trim();
+    const { text: rawOutput, engine: docEngine } = await handleAIRequest(prompt, 1800);
+    console.log(`[DocGen] Used engine: ${docEngine}`);
     let textOutput = rawOutput;
 
     // Try to parse if it returned JSON instead of raw text
