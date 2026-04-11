@@ -11,6 +11,7 @@ import nodemailer from 'nodemailer';
 import mongoose from 'mongoose';
 import jwt from 'jsonwebtoken';
 import User from './models/User.js';
+import Lawyer from './models/Lawyer.js';
 
 // ─── ML PIPELINE — Case Strength Analyser ───────────────────────────────────
 import { searchCases } from './scrapers/indianKanoon.js';
@@ -1388,6 +1389,270 @@ app.post('/api/notifications/custom', protect, async (req, res) => {
 });
 
 // ─────────────────────────────────────────────────────────────────────────────
+
+// ─── LAWYER PORTAL ───────────────────────────────────────────────────────────
+
+// Lawyer auth middleware
+const protectLawyer = async (req, res, next) => {
+  let token;
+  if (req.headers.authorization?.startsWith('Bearer')) {
+    try {
+      token = req.headers.authorization.split(' ')[1];
+      const decoded = jwt.verify(token, process.env.JWT_SECRET || 'nyAI_super_secret_dev_key');
+      req.lawyer = await Lawyer.findById(decoded.id).select('-password');
+      if (!req.lawyer) throw new Error('Not a lawyer account');
+      next();
+    } catch(err) {
+      res.status(401).json({ error: 'Not authorized as lawyer' });
+    }
+  } else {
+    res.status(401).json({ error: 'No token provided' });
+  }
+};
+
+// Register lawyer
+app.post('/api/lawyer/register', async (req, res) => {
+  const { name, email, password, phone, barCouncilNumber, state, city, specializations } = req.body;
+  if (!name || !email || !password || !barCouncilNumber) {
+    return res.status(400).json({ error: 'Name, email, password, and bar council number are required.' });
+  }
+  try {
+    const existing = await Lawyer.findOne({ email });
+    if (existing) return res.status(400).json({ error: 'A lawyer with this email already exists.' });
+    const lawyer = await Lawyer.create({ name, email, password, phone, barCouncilNumber, state, city, specializations: specializations || [] });
+    res.status(201).json({ _id: lawyer._id, name: lawyer.name, email: lawyer.email, token: generateToken(lawyer._id), role: 'lawyer' });
+  } catch (err) {
+    console.error('Lawyer Register Error:', err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// Login lawyer
+app.post('/api/lawyer/login', async (req, res) => {
+  const { email, password } = req.body;
+  try {
+    const lawyer = await Lawyer.findOne({ email });
+    if (lawyer && (await lawyer.matchPassword(password))) {
+      res.json({ _id: lawyer._id, name: lawyer.name, email: lawyer.email, barCouncilNumber: lawyer.barCouncilNumber, verified: lawyer.verified, token: generateToken(lawyer._id), role: 'lawyer' });
+    } else {
+      res.status(401).json({ error: 'Invalid email or password' });
+    }
+  } catch (err) {
+    console.error('Lawyer Login Error:', err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// 1. Get lawyer dashboard
+app.get('/api/lawyer/dashboard', protectLawyer, async (req, res) => {
+  try {
+    const lawyer = req.lawyer;
+    const now = new Date();
+    const upcomingHearings = lawyer.cases
+      .flatMap(c => c.hearings.map(h => ({ caseId: c.caseId, caseTitle: c.title, clientName: c.clientName, court: c.court, date: h.date, notes: h.notes, daysUntil: Math.ceil((new Date(h.date) - now) / (1000*60*60*24)) })))
+      .filter(h => h.daysUntil >= 0)
+      .sort((a, b) => a.daysUntil - b.daysUntil)
+      .slice(0, 5);
+    res.json({
+      name: lawyer.name, barCouncilNumber: lawyer.barCouncilNumber, verified: lawyer.verified,
+      totalCases: lawyer.cases.length,
+      activeCases: lawyer.cases.filter(c => c.status === 'active').length,
+      wonCases: lawyer.cases.filter(c => c.status === 'won').length,
+      totalClients: lawyer.clients.length,
+      upcomingHearings,
+      recentCases: [...lawyer.cases].reverse().slice(0, 5),
+      notifications: lawyer.notifications.filter(n => !n.read).slice(0, 10),
+      unreadCount: lawyer.notifications.filter(n => !n.read).length
+    });
+  } catch (err) {
+    console.error('Lawyer Dashboard Error:', err);
+    res.status(500).json({ error: 'Failed to load lawyer dashboard.' });
+  }
+});
+
+// 2. Add a client
+app.post('/api/lawyer/clients', protectLawyer, async (req, res) => {
+  const { name, email, phone } = req.body;
+  if (!name) return res.status(400).json({ error: 'Client name required.' });
+  try {
+    const lawyer = req.lawyer;
+    lawyer.clients.push({ name, email, phone });
+    lawyer.notifications.push({ message: `New client ${name} added`, type: 'client', read: false });
+    await lawyer.save();
+    res.json({ success: true, clients: lawyer.clients });
+  } catch (err) { res.status(500).json({ error: 'Failed to add client.' }); }
+});
+
+// 3. Get all clients
+app.get('/api/lawyer/clients', protectLawyer, async (req, res) => {
+  try { res.json(req.lawyer.clients); }
+  catch (err) { res.status(500).json({ error: 'Failed to get clients.' }); }
+});
+
+// 4. Add a case
+app.post('/api/lawyer/cases', protectLawyer, async (req, res) => {
+  const { caseId, clientName, title, court, category, filingDate } = req.body;
+  if (!title) return res.status(400).json({ error: 'Case title required.' });
+  try {
+    const lawyer = req.lawyer;
+    lawyer.cases.push({ caseId, clientName, title, court, category, filingDate: filingDate ? new Date(filingDate) : undefined });
+    lawyer.notifications.push({ message: `Case "${title}" added for ${clientName}`, type: 'case', read: false });
+    await lawyer.save();
+    res.json({ success: true, cases: lawyer.cases });
+  } catch (err) { res.status(500).json({ error: 'Failed to add case.' }); }
+});
+
+// 5. Get all cases
+app.get('/api/lawyer/cases', protectLawyer, async (req, res) => {
+  try { res.json(req.lawyer.cases); }
+  catch (err) { res.status(500).json({ error: 'Failed to get cases.' }); }
+});
+
+// 6. Get single case
+app.get('/api/lawyer/cases/:caseId', protectLawyer, async (req, res) => {
+  try {
+    const c = req.lawyer.cases.find(c => c.caseId === req.params.caseId);
+    if (!c) return res.status(404).json({ error: 'Case not found.' });
+    res.json(c);
+  } catch (err) { res.status(500).json({ error: 'Failed to get case.' }); }
+});
+
+// 7. Update case status
+app.patch('/api/lawyer/cases/:caseId/status', protectLawyer, async (req, res) => {
+  const { status } = req.body;
+  const valid = ['active','won','lost','settled','dropped'];
+  if (!valid.includes(status)) return res.status(400).json({ error: 'Invalid status.' });
+  try {
+    const lawyer = req.lawyer;
+    const c = lawyer.cases.find(c => c.caseId === req.params.caseId);
+    if (!c) return res.status(404).json({ error: 'Case not found.' });
+    c.status = status;
+    lawyer.notifications.push({ message: `Case "${c.title}" marked as ${status}`, type: 'case', read: false });
+    await lawyer.save();
+    res.json({ success: true, case: c });
+  } catch (err) { res.status(500).json({ error: 'Failed to update status.' }); }
+});
+
+// 8. Add hearing
+app.post('/api/lawyer/cases/:caseId/hearings', protectLawyer, async (req, res) => {
+  const { date, notes } = req.body;
+  if (!date) return res.status(400).json({ error: 'Date required.' });
+  try {
+    const lawyer = req.lawyer;
+    const c = lawyer.cases.find(c => c.caseId === req.params.caseId);
+    if (!c) return res.status(404).json({ error: 'Case not found.' });
+    const hDate = new Date(date);
+    c.hearings.push({ date: hDate, notes });
+    const fmt = hDate.toLocaleDateString('en-IN', { day: 'numeric', month: 'long', year: 'numeric' });
+    lawyer.notifications.push({ message: `Hearing added for "${c.title}" on ${fmt}`, type: 'hearing', read: false });
+    await lawyer.save();
+    res.json({ success: true, case: c });
+  } catch (err) { res.status(500).json({ error: 'Failed to add hearing.' }); }
+});
+
+// 9. Upload document
+app.post('/api/lawyer/cases/:caseId/documents', protectLawyer, async (req, res) => {
+  const { fileName, fileType, content } = req.body;
+  if (!fileName || !content) return res.status(400).json({ error: 'fileName and content required.' });
+  try {
+    const lawyer = req.lawyer;
+    const c = lawyer.cases.find(c => c.caseId === req.params.caseId);
+    if (!c) return res.status(404).json({ error: 'Case not found.' });
+    c.documents.push({ fileName, fileType, content });
+    lawyer.notifications.push({ message: `"${fileName}" uploaded to "${c.title}"`, type: 'case', read: false });
+    await lawyer.save();
+    res.json({ success: true, case: c });
+  } catch (err) { res.status(500).json({ error: 'Failed to upload document.' }); }
+});
+
+// 10. Delete document
+app.delete('/api/lawyer/cases/:caseId/documents/:docIndex', protectLawyer, async (req, res) => {
+  try {
+    const lawyer = req.lawyer;
+    const c = lawyer.cases.find(c => c.caseId === req.params.caseId);
+    if (!c) return res.status(404).json({ error: 'Case not found.' });
+    const idx = parseInt(req.params.docIndex);
+    if (isNaN(idx) || idx < 0 || idx >= c.documents.length) return res.status(400).json({ error: 'Invalid document index.' });
+    c.documents.splice(idx, 1);
+    await lawyer.save();
+    res.json({ success: true });
+  } catch (err) { res.status(500).json({ error: 'Failed to delete document.' }); }
+});
+
+// 11. AI legal assistance (RAG-powered)
+app.post('/api/lawyer/cases/:caseId/ai-assist', protectLawyer, async (req, res) => {
+  const { query } = req.body;
+  if (!query) return res.status(400).json({ error: 'Query required.' });
+  try {
+    const lawyer = req.lawyer;
+    const c = lawyer.cases.find(c => c.caseId === req.params.caseId);
+    if (!c) return res.status(404).json({ error: 'Case not found.' });
+
+    const docsContext = c.documents.map(d => `[${d.fileName}]:\n${d.content}`).join('\n\n---\n\n').substring(0, 4000);
+
+    let similarCases = [];
+    let caseContext = 'No similar cases retrieved.';
+    try {
+      similarCases = await searchCases(`${c.title} ${c.category}`, 5);
+      caseContext = similarCases.map(sc => `- ${sc.title} (${sc.court}, ${sc.date}): ${sc.outcome} — ${sc.snippet}`).join('\n');
+    } catch (scErr) {
+      console.warn('[AI Assist] IndianKanoon search failed:', scErr.message);
+    }
+
+    const prompt = `You are an expert Indian advocate assisting a lawyer with case research and strategy.
+
+CASE DETAILS:
+Title: ${c.title}
+Court: ${c.court}
+Category: ${c.category}
+Client: ${c.clientName}
+
+UPLOADED CASE DOCUMENTS:
+${docsContext || 'No documents uploaded yet.'}
+
+SIMILAR CASES FROM INDIAN COURTS (IndianKanoon):
+${caseContext}
+
+LAWYER'S QUESTION: ${query}
+
+Provide a detailed, structured response covering:
+1. Direct answer to the lawyer's question
+2. Relevant Indian law (Acts and Sections)
+3. How the uploaded documents support or weaken the case
+4. Insights from similar past cases and their outcomes
+5. Recommended legal strategy
+6. Key arguments to make in court
+7. Risks and counterarguments to prepare for
+
+Cite specific cases and sections. Be direct and practical. This is for a qualified lawyer — use proper legal terminology.`;
+
+    const { text, engine } = await handleAIRequest(prompt, 2000);
+
+    c.aiNotes.push({ query, response: text, citedCases: similarCases.map(sc => sc.title) });
+    await lawyer.save();
+
+    res.json({
+      response: text,
+      citedCases: similarCases.map(sc => ({ title: sc.title, court: sc.court, date: sc.date, outcome: sc.outcome, url: sc.url })),
+      engine
+    });
+  } catch (err) {
+    console.error('Lawyer AI Assist Error:', err);
+    res.status(500).json({ error: 'AI assistance failed.' });
+  }
+});
+
+// 12. Mark lawyer notifications read
+app.patch('/api/lawyer/notifications/read', protectLawyer, async (req, res) => {
+  try {
+    const lawyer = req.lawyer;
+    lawyer.notifications.forEach(n => { n.read = true; });
+    await lawyer.save();
+    res.json({ success: true });
+  } catch (err) { res.status(500).json({ error: 'Failed to mark notifications read.' }); }
+});
+
+// ─── END LAWYER PORTAL ───────────────────────────────────────────────────────
 
 // Export for Vercel
 export default app;

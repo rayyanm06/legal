@@ -2,22 +2,40 @@ import React, { useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { 
   Scale, ArrowRight, ShieldCheck, Mail, Lock, 
-  User, CheckCircle2, History, Zap, Sparkles, ShieldAlert
+  User, CheckCircle2, History, Zap, Sparkles, ShieldAlert, Briefcase, Hash, MapPin
 } from 'lucide-react';
 import { Link, useNavigate } from 'react-router-dom';
 
 import { GoogleLogin } from '@react-oauth/google';
 import {jwtDecode} from 'jwt-decode';
-import { API_ENDPOINTS } from '../api/config';
+import { API_ENDPOINTS, API_BASE_URL } from '../api/config';
+
+const INDIAN_STATES = [
+  'Andhra Pradesh','Arunachal Pradesh','Assam','Bihar','Chhattisgarh','Goa','Gujarat',
+  'Haryana','Himachal Pradesh','Jharkhand','Karnataka','Kerala','Madhya Pradesh',
+  'Maharashtra','Manipur','Meghalaya','Mizoram','Nagaland','Odisha','Punjab',
+  'Rajasthan','Sikkim','Tamil Nadu','Telangana','Tripura','Uttar Pradesh',
+  'Uttarakhand','West Bengal','Delhi','Jammu & Kashmir','Ladakh','Puducherry'
+];
+
+const SPECIALIZATIONS = ['Criminal','Civil','Property','Consumer','Labour','Family','Corporate','Tax'];
 
 const AuthPage = ({ setIsLoggedIn, setUserEmail }) => {
   const [isLogin, setIsLogin] = useState(true);
+  const [role, setRole] = useState('citizen');
   const [isLoading, setIsLoading] = useState(false);
   const [email, setEmail] = useState("");
   const [name, setName] = useState("");
   const [password, setPassword] = useState("");
   const [error, setError] = useState("");
+  const [barCouncilNumber, setBarCouncilNumber] = useState("");
+  const [phone, setPhone] = useState("");
+  const [state, setState] = useState("");
+  const [city, setCity] = useState("");
+  const [specs, setSpecs] = useState([]);
   const navigate = useNavigate();
+
+  const toggleSpec = (s) => setSpecs(prev => prev.includes(s) ? prev.filter(x => x !== s) : [...prev, s]);
 
   const handleSubmit = async (e) => {
     e.preventDefault();
@@ -25,28 +43,53 @@ const AuthPage = ({ setIsLoggedIn, setUserEmail }) => {
     setError("");
 
     try {
-      const endpoint = isLogin ? API_ENDPOINTS.AUTH.LOGIN : API_ENDPOINTS.AUTH.REGISTER;
-      const payload = isLogin ? { email, password } : { email, password, name };
-      
-      const response = await fetch(endpoint, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(payload)
-      });
+      if (role === 'lawyer') {
+        const endpoint = isLogin
+          ? `${API_BASE_URL}/api/lawyer/login`
+          : `${API_BASE_URL}/api/lawyer/register`;
+        const payload = isLogin
+          ? { email, password }
+          : { name, email, password, phone, barCouncilNumber, state, city, specializations: specs };
 
-      const data = await response.json();
-
-      if (response.ok) {
-        localStorage.setItem("nyai_user_email", email);
-        localStorage.setItem("nyai_token", data.token);
-        if (data.name) {
-          localStorage.setItem("nyai_user_name", data.name);
+        const response = await fetch(endpoint, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(payload)
+        });
+        const data = await response.json();
+        if (response.ok) {
+          localStorage.setItem('nyai_token', data.token);
+          localStorage.setItem('nyai_role', 'lawyer');
+          localStorage.setItem('nyai_lawyer_name', data.name);
+          localStorage.setItem('nyai_user_email', email);
+          navigate('/lawyer-dashboard');
+        } else {
+          setError(data.error || 'Lawyer authentication failed.');
         }
-        if (setUserEmail) setUserEmail(email);
-        setIsLoggedIn(true);
-        navigate('/chat');
       } else {
-        setError(data.error || "Authentication failed");
+        const endpoint = isLogin ? API_ENDPOINTS.AUTH.LOGIN : API_ENDPOINTS.AUTH.REGISTER;
+        const payload = isLogin ? { email, password } : { email, password, name };
+        
+        const response = await fetch(endpoint, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(payload)
+        });
+
+        const data = await response.json();
+
+        if (response.ok) {
+          localStorage.setItem("nyai_user_email", email);
+          localStorage.setItem("nyai_token", data.token);
+          if (data.name) {
+            localStorage.setItem("nyai_user_name", data.name);
+          }
+          if (setUserEmail) setUserEmail(email);
+          setIsLoggedIn(true);
+          navigate('/chat');
+        } else {
+          setError(data.error || "Authentication failed");
+        }
       }
     } catch (err) {
       setError("Server connection failed. Is the backend on 5001?");
@@ -65,7 +108,6 @@ const AuthPage = ({ setIsLoggedIn, setUserEmail }) => {
 
       const generatedPassword = "google_oauth_fallback_" + (decoded.sub || decoded.email);
 
-      // Attempt to login first
       let response = await fetch(API_ENDPOINTS.AUTH.LOGIN, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -73,7 +115,6 @@ const AuthPage = ({ setIsLoggedIn, setUserEmail }) => {
       });
 
       if (!response.ok) {
-        // If login fails, try to register
         response = await fetch(API_ENDPOINTS.AUTH.REGISTER, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
@@ -147,25 +188,45 @@ const AuthPage = ({ setIsLoggedIn, setUserEmail }) => {
       </div>
 
       {/* Form Side */}
-      <div className="w-full md:w-1/2 bg-white flex flex-col justify-center items-center p-12 lg:p-24 relative overflow-hidden">
+      <div className="w-full md:w-1/2 bg-white flex flex-col justify-center items-center p-12 lg:p-20 relative overflow-hidden overflow-y-auto">
          <motion.div 
            initial={{ opacity: 0, y: 20 }}
            animate={{ opacity: 1, y: 0 }}
-           className="w-full max-w-md relative z-10"
+           className="w-full max-w-md relative z-10 py-8"
          >
-            <div className="mb-12">
+            {/* Role Toggle */}
+            <div className="flex items-center bg-gray-50 border border-gray-100 rounded-2xl p-1.5 mb-8">
+               <button
+                 type="button"
+                 onClick={() => { setRole('citizen'); setError(''); }}
+                 className={`flex-1 flex items-center justify-center gap-2 py-3 rounded-xl text-xs font-black uppercase tracking-widest transition-all ${role === 'citizen' ? 'bg-forest text-lime shadow-lg' : 'text-gray-400 hover:text-forest'}`}
+               >
+                 <User size={14} /> I'm a Citizen
+               </button>
+               <button
+                 type="button"
+                 onClick={() => { setRole('lawyer'); setError(''); }}
+                 className={`flex-1 flex items-center justify-center gap-2 py-3 rounded-xl text-xs font-black uppercase tracking-widest transition-all ${role === 'lawyer' ? 'bg-forest text-lime shadow-lg' : 'text-gray-400 hover:text-forest'}`}
+               >
+                 <Briefcase size={14} /> I'm a Lawyer
+               </button>
+            </div>
+
+            <div className="mb-8">
                <div className="flex items-center gap-4 mb-4">
                   <div className="w-8 h-px bg-gray-200"></div>
                   <p className="text-[10px] font-black text-gray-400 uppercase tracking-widest italic">{isLogin ? 'Welcome Back' : 'Create Account'}</p>
                   <div className="w-8 h-px bg-gray-200"></div>
                </div>
-               <h2 className="text-5xl font-black text-gray-900 heading-display lowercase tracking-tighter mb-4">{isLogin ? 'Login to system.' : 'Join the studio.'}</h2>
+               <h2 className="text-4xl font-black text-gray-900 heading-display lowercase tracking-tighter mb-4">
+                 {isLogin ? 'Login to system.' : role === 'lawyer' ? 'Join as lawyer.' : 'Join the studio.'}
+               </h2>
                <p className="text-gray-400 font-bold text-sm italic">
-                  {isLogin ? "Access your documents and cases." : "Start your 7-day free pro trial."}
+                  {isLogin ? `Access your ${role === 'lawyer' ? 'case portal' : 'documents and cases'}.` : role === 'lawyer' ? 'Set up your nyAI lawyer portal.' : 'Start your 7-day free pro trial.'}
                </p>
             </div>
 
-            <form onSubmit={handleSubmit} className="space-y-6">
+            <form onSubmit={handleSubmit} className="space-y-5">
                 {error && (
                   <motion.div 
                     initial={{ opacity: 0, x: -10 }}
@@ -182,43 +243,107 @@ const AuthPage = ({ setIsLoggedIn, setUserEmail }) => {
                        initial={{ height: 0, opacity: 0 }}
                        animate={{ height: 'auto', opacity: 1 }}
                        exit={{ height: 0, opacity: 0 }}
-                       className="space-y-6 overflow-hidden"
+                       className="space-y-5 overflow-hidden"
                      >
                         <div className="relative group">
-                           <User className="absolute left-6 top-1/2 -translate-y-1/2 text-gray-400 group-focus-within:text-forest transition-colors" size={24} />
+                           <User className="absolute left-6 top-1/2 -translate-y-1/2 text-gray-400 group-focus-within:text-forest transition-colors" size={22} />
                            <input 
                               type="text" 
-                              placeholder="Full Legal Name" 
+                              placeholder={role === 'lawyer' ? 'Full Legal Name (as on Bar Certificate)' : 'Full Legal Name'}
                               value={name}
                               onChange={(e) => setName(e.target.value)}
-                              className="w-full bg-gray-50 border border-gray-100 py-6 pl-16 pr-8 rounded-[2rem] text-lg font-medium focus:ring-0 focus:border-lime transition-all focus:bg-white"
+                              className="w-full bg-gray-50 border border-gray-100 py-5 pl-16 pr-8 rounded-[2rem] text-base font-medium focus:ring-0 focus:border-lime transition-all focus:bg-white"
                               required 
                            />
                         </div>
+
+                        {role === 'lawyer' && (
+                          <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="space-y-5">
+                            <div className="relative group">
+                               <Hash className="absolute left-6 top-1/2 -translate-y-1/2 text-gray-400 group-focus-within:text-forest transition-colors" size={22} />
+                               <input 
+                                  type="text" 
+                                  placeholder="Bar Council Enrollment Number"
+                                  value={barCouncilNumber}
+                                  onChange={(e) => setBarCouncilNumber(e.target.value)}
+                                  className="w-full bg-gray-50 border border-gray-100 py-5 pl-16 pr-8 rounded-[2rem] text-base font-medium focus:ring-0 focus:border-lime transition-all focus:bg-white"
+                                  required 
+                               />
+                            </div>
+                            <div className="relative group">
+                               <Mail className="absolute left-6 top-1/2 -translate-y-1/2 text-gray-400 group-focus-within:text-forest transition-colors" size={22} />
+                               <input 
+                                  type="tel" 
+                                  placeholder="Phone Number"
+                                  value={phone}
+                                  onChange={(e) => setPhone(e.target.value)}
+                                  className="w-full bg-gray-50 border border-gray-100 py-5 pl-16 pr-8 rounded-[2rem] text-base font-medium focus:ring-0 focus:border-lime transition-all focus:bg-white"
+                               />
+                            </div>
+                            <div className="grid grid-cols-2 gap-3">
+                              <div className="relative group">
+                                 <MapPin className="absolute left-4 top-1/2 -translate-y-1/2 text-gray-400 group-focus-within:text-forest transition-colors" size={16} />
+                                 <select
+                                   value={state}
+                                   onChange={e => setState(e.target.value)}
+                                   className="w-full bg-gray-50 border border-gray-100 py-4 pl-10 pr-4 rounded-2xl text-sm font-medium focus:ring-0 focus:border-lime transition-all focus:bg-white appearance-none"
+                                 >
+                                   <option value="">State</option>
+                                   {INDIAN_STATES.map(s => <option key={s} value={s}>{s}</option>)}
+                                 </select>
+                              </div>
+                              <div className="relative group">
+                                 <MapPin className="absolute left-4 top-1/2 -translate-y-1/2 text-gray-400 group-focus-within:text-forest transition-colors" size={16} />
+                                 <input 
+                                    type="text" 
+                                    placeholder="City"
+                                    value={city}
+                                    onChange={(e) => setCity(e.target.value)}
+                                    className="w-full bg-gray-50 border border-gray-100 py-4 pl-10 pr-4 rounded-2xl text-sm font-medium focus:ring-0 focus:border-lime transition-all focus:bg-white"
+                                 />
+                              </div>
+                            </div>
+                            <div>
+                              <p className="text-[10px] font-black text-gray-400 uppercase tracking-widest mb-3">Specializations</p>
+                              <div className="flex flex-wrap gap-2">
+                                {SPECIALIZATIONS.map(s => (
+                                  <button
+                                    key={s}
+                                    type="button"
+                                    onClick={() => toggleSpec(s)}
+                                    className={`px-4 py-2 rounded-full text-[10px] font-black uppercase tracking-widest transition-all ${specs.includes(s) ? 'bg-forest text-lime shadow-lg' : 'bg-gray-100 text-gray-400 hover:bg-gray-200'}`}
+                                  >
+                                    {s}
+                                  </button>
+                                ))}
+                              </div>
+                            </div>
+                          </motion.div>
+                        )}
                      </motion.div>
                    )}
                 </AnimatePresence>
 
                 <div className="relative group">
-                   <Mail className="absolute left-6 top-1/2 -translate-y-1/2 text-gray-400 group-focus-within:text-forest transition-colors" size={24} />
+                   <Mail className="absolute left-6 top-1/2 -translate-y-1/2 text-gray-400 group-focus-within:text-forest transition-colors" size={22} />
                    <input 
                       type="email" 
                       placeholder="Email Address" 
                       value={email}
                       onChange={(e) => setEmail(e.target.value)}
-                      className="w-full bg-gray-50 border border-gray-100 py-6 pl-16 pr-8 rounded-[2rem] text-lg font-medium focus:ring-0 focus:border-lime transition-all focus:bg-white"
+                      className="w-full bg-gray-50 border border-gray-100 py-5 pl-16 pr-8 rounded-[2rem] text-base font-medium focus:ring-0 focus:border-lime transition-all focus:bg-white"
                       required 
                    />
                 </div>
 
                 <div className="relative group">
-                   <Lock className="absolute left-6 top-1/2 -translate-y-1/2 text-gray-400 group-focus-within:text-forest transition-colors" size={24} />
+                   <Lock className="absolute left-6 top-1/2 -translate-y-1/2 text-gray-400 group-focus-within:text-forest transition-colors" size={22} />
                    <input 
                       type="password" 
                       placeholder="Password" 
                       value={password}
                       onChange={(e) => setPassword(e.target.value)}
-                      className="w-full bg-gray-50 border border-gray-100 py-6 pl-16 pr-8 rounded-[2rem] text-lg font-medium focus:ring-0 focus:border-lime transition-all focus:bg-white"
+                      className="w-full bg-gray-50 border border-gray-100 py-5 pl-16 pr-8 rounded-[2rem] text-base font-medium focus:ring-0 focus:border-lime transition-all focus:bg-white"
                       required 
                    />
                 </div>
@@ -235,60 +360,64 @@ const AuthPage = ({ setIsLoggedIn, setUserEmail }) => {
                      </div>
                    ) : (
                      <>
-                        {isLogin ? 'Login to nyAI' : 'Create Free Account'}
+                        {isLogin ? (role === 'lawyer' ? 'Enter Lawyer Portal' : 'Login to nyAI') : (role === 'lawyer' ? 'Register as Lawyer' : 'Create Free Account')}
                         <ArrowRight size={24} className="text-lime group-hover:translate-x-2 transition-transform" />
                      </>
                    )}
                 </button>
 
-                <div className="relative py-2">
-                   <div className="absolute inset-0 flex items-center"><div className="w-full border-t border-gray-100"></div></div>
-                   <div className="relative flex justify-center text-[10px] font-black uppercase tracking-widest text-gray-300 bg-white px-4">Social Entry</div>
-                </div>
+                {role === 'citizen' && (
+                  <>
+                    <div className="relative py-2">
+                       <div className="absolute inset-0 flex items-center"><div className="w-full border-t border-gray-100"></div></div>
+                       <div className="relative flex justify-center text-[10px] font-black uppercase tracking-widest text-gray-300 bg-white px-4">Social Entry</div>
+                    </div>
 
-                <div className="flex flex-col gap-4 items-center">
-                   <div className="w-full flex justify-center">
-                      <GoogleLogin 
-                        onSuccess={handleGoogleSuccess}
-                        onError={() => setError("Google Authentication Failed")}
-                        theme="filled_black"
-                        shape="pill"
-                        size="large"
-                        text="continue_with"
-                        width="300"
-                      />
-                   </div>
+                    <div className="flex flex-col gap-4 items-center">
+                       <div className="w-full flex justify-center">
+                          <GoogleLogin 
+                            onSuccess={handleGoogleSuccess}
+                            onError={() => setError("Google Authentication Failed")}
+                            theme="filled_black"
+                            shape="pill"
+                            size="large"
+                            text="continue_with"
+                            width="300"
+                          />
+                       </div>
 
-                   {/* Mock Auth Bypass for Testing without Google Client ID Setup */}
-                   <button 
-                     type="button"
-                     onClick={() => {
-                        const mockPayload = JSON.stringify({ 
-                           email: email || "tester@nyai.com", 
-                           name: name || "Developer Mode", 
-                           picture: "https://i.pravatar.cc/150" 
-                        });
-                        handleGoogleSuccess({
-                           credential: `mock_header.${btoa(mockPayload)}.mock_signature`
-                        });
-                     }}
-                     className="text-[10px] font-black text-lime uppercase tracking-widest bg-forest px-4 py-2 rounded-full hover:bg-forest/80 transition-all opacity-40 hover:opacity-100"
-                   >
-                     🚀 Enter as Tester (Mock OAuth)
-                   </button>
-                   
-                   <p className="text-[9px] text-gray-300 font-bold max-w-[200px] text-center italic mt-2 uppercase tracking-tight">
-                     Server Persistence: All details secured in <span className="text-lime">MongoDB Atlas</span>
-                   </p>
-                </div>
+                       {/* Mock Auth Bypass for Testing without Google Client ID Setup */}
+                       <button 
+                         type="button"
+                         onClick={() => {
+                            const mockPayload = JSON.stringify({ 
+                               email: email || "tester@nyai.com", 
+                               name: name || "Developer Mode", 
+                               picture: "https://i.pravatar.cc/150" 
+                            });
+                            handleGoogleSuccess({
+                               credential: `mock_header.${btoa(mockPayload)}.mock_signature`
+                            });
+                         }}
+                         className="text-[10px] font-black text-lime uppercase tracking-widest bg-forest px-4 py-2 rounded-full hover:bg-forest/80 transition-all opacity-40 hover:opacity-100"
+                       >
+                         🚀 Enter as Tester (Mock OAuth)
+                       </button>
+                       
+                       <p className="text-[9px] text-gray-300 font-bold max-w-[200px] text-center italic mt-2 uppercase tracking-tight">
+                         Server Persistence: All details secured in <span className="text-lime">MongoDB Atlas</span>
+                       </p>
+                    </div>
+                  </>
+                )}
              </form>
 
-            <div className="mt-12 text-center">
+            <div className="mt-10 text-center">
                <button 
                 onClick={() => setIsLogin(!isLogin)}
                 className="text-sm font-black text-gray-400 uppercase tracking-widest underline decoration-lime decoration-2 underline-offset-4 hover:text-forest transition-colors italic"
                >
-                  {isLogin ? "Need an account? Sign up free." : "Already joining us? Login here."}
+                 {isLogin ? "Need an account? Sign up free." : "Already joining us? Login here."}
                </button>
             </div>
          </motion.div>

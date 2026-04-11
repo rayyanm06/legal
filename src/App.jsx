@@ -13,6 +13,7 @@ import AboutPage from './pages/AboutPage';
 import AuthPage from './pages/AuthPage';
 import PricingPage from './pages/PricingPage';
 import LegalLiteracyApp from './features/legal-literacy';
+import LawyerDashboardPage from './pages/LawyerDashboardPage';
 
 // Navbar Component
 const Navbar = ({ isLoggedIn, onLogout, userName }) => {
@@ -438,6 +439,9 @@ function App() {
     setUserName(null);
     localStorage.removeItem('nyai_user_email');
     localStorage.removeItem('nyai_user_name');
+    localStorage.removeItem('nyai_token');
+    localStorage.removeItem('nyai_role');
+    localStorage.removeItem('nyai_lawyer_name');
     navigate('/');
   };
 
@@ -462,6 +466,11 @@ function App() {
         <Route path="/pricing" element={isLoggedIn ? <PricingPage /> : <Navigate to="/login" />} />
         
         <Route path="/about" element={<AboutPage />} />
+        <Route path="/lawyer-dashboard" element={
+          localStorage.getItem('nyai_role') === 'lawyer'
+            ? <LawyerDashboardPage />
+            : <Navigate to="/login" />
+        } />
         <Route path="/login" element={isLoggedIn ? <Navigate to="/chat" /> : <AuthPage setIsLoggedIn={setIsLoggedIn} setUserEmail={setUserEmail} />} />
         <Route path="/signup" element={isLoggedIn ? <Navigate to="/chat" /> : <AuthPage setIsLoggedIn={setIsLoggedIn} setUserEmail={setUserEmail} />} />
       </Routes>
