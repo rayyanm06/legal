@@ -3,6 +3,7 @@ import QuestionCard from './QuestionCard';
 import { askClaude, parseJSONResponse } from '../utils/aiService';
 import GavelLoading from '../../../components/GavelLoading';
 import { API_ENDPOINTS } from '../../../api/config';
+import { scenarios as localScenarios } from '../data/scenarios';
 
 const css = `
   @keyframes lexFadeIn { from{opacity:0;transform:translateY(16px)} to{opacity:1;transform:translateY(0)} }
@@ -16,16 +17,30 @@ export default function ScenarioPage({ userEmail, onComplete }) {
   const [hasAnswered, setHasAnswered] = useState(false);
   const [isGenerating, setIsGenerating] = useState(false);
   const [genError, setGenError] = useState(null);
+  const [initialLoading, setInitialLoading] = useState(true);
 
   useEffect(() => {
-    fetch(API_ENDPOINTS.SCENARIOS)
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), 5000);
+
+    fetch(API_ENDPOINTS.SCENARIOS, { signal: controller.signal })
       .then(res => res.json())
       .then(data => {
+        clearTimeout(timeout);
         if (data && data.length > 0) {
           setScenarios(data);
+        } else {
+          setScenarios(localScenarios);
         }
       })
-      .catch(e => console.warn("Backend not reachable:", e));
+      .catch(e => {
+        clearTimeout(timeout);
+        console.warn("Backend not reachable, using local scenarios:", e.message);
+        setScenarios(localScenarios);
+      })
+      .finally(() => setInitialLoading(false));
+
+    return () => { clearTimeout(timeout); controller.abort(); };
   }, []);
 
   const handleAnswer = (isCorrect) => {
@@ -93,7 +108,7 @@ Respond with ONLY a JSON object:
     }
   };
 
-  if (scenarios.length === 0) {
+  if (initialLoading) {
     return (
       <div style={{ padding: '100px 20px', textAlign: 'center', fontFamily: "'Outfit',sans-serif" }}>
         <style>{css}</style>

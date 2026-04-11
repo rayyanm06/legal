@@ -1,6 +1,7 @@
 // useProgress.js - Custom React Hook for managing user integration with backend
 // Fetches local user data and provides utility function for POSTs
 
+import { useState, useEffect } from 'react';
 import { API_ENDPOINTS } from '../../../api/config';
 
 export const useProgress = (userId = 'guest') => {

@@ -681,7 +681,7 @@ app.post('/api/progress', async (req, res) => {
   }
 });
 
-app.get('/progress/:userId', async (req, res) => {
+app.get('/api/progress/:userId', async (req, res) => {
   const { userId } = req.params;
   try {
     let user = null;
