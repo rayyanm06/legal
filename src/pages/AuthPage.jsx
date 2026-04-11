@@ -38,6 +38,7 @@ const AuthPage = ({ setIsLoggedIn, setUserEmail }) => {
 
       if (response.ok) {
         localStorage.setItem("nyai_user_email", email);
+        localStorage.setItem("nyai_token", data.token);
         if (data.name) {
           localStorage.setItem("nyai_user_name", data.name);
         }
@@ -89,6 +90,7 @@ const AuthPage = ({ setIsLoggedIn, setUserEmail }) => {
       if (response.ok) {
         localStorage.setItem("nyai_user_email", decoded.email);
         localStorage.setItem("nyai_user_name", decoded.name);
+        if (data.token) localStorage.setItem("nyai_token", data.token);
         if (setUserEmail) setUserEmail(decoded.email);
         setIsLoggedIn(true);
         navigate('/chat');

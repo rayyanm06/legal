@@ -1,41 +1,173 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { motion } from 'framer-motion';
 import { 
   LayoutDashboard, FileText, Bell, Users, Settings, 
   Search, ShieldAlert, CheckCircle2, TrendingUp,
   Clock, Download, MoreVertical, Plus, Scale,
-  ChevronRight, Calendar, AlertTriangle, Sparkles, MapPin, Trash2, ArrowRight
+  ChevronRight, Calendar, AlertTriangle, Sparkles, MapPin, Trash2, ArrowRight, X
 } from 'lucide-react';
+import { API_BASE_URL } from '../api/config';
+
+// ── helper: badge colour for notification categories ──────────────────────────
+const categoryBadgeClass = (cat) => {
+  switch (cat) {
+    case 'COMPLIANCE': return 'bg-red-500 text-white';
+    case 'PROPERTY':   return 'bg-amber-400 text-forest';
+    case 'TAX':        return 'bg-lime text-forest';
+    case 'HEARING':    return 'bg-blue-500 text-white';
+    default:           return 'bg-gray-400 text-white';
+  }
+};
+
+const scoreLabel = (score) => {
+  if (score >= 80) return 'Excellent';
+  if (score >= 60) return 'Good';
+  if (score >= 40) return 'Fair';
+  return 'Needs Attention';
+};
+
+const DEFAULT_DASHBOARD = {
+  userName: 'Guest',
+  legalHealthScore: 50,
+  scoreChange: 0,
+  docsVerified: 0,
+  totalDocs: 0,
+  activeCases: 0,
+  alertsCleared: 0,
+  consultationHrs: 0,
+  notifications: [],
+  unreadCount: 0,
+  trackedCases: [],
+  upcomingHearings: [],
+  complianceItems: [
+    { label: 'Income Tax Proof', done: true },
+    { label: 'Rental Renewal', done: false },
+    { label: 'IP Trademark Status', done: true },
+    { label: 'GST Filing Status', done: true },
+    { label: 'Family Will Update', done: false }
+  ]
+};
 
 const DashboardPage = () => {
   const [activeTab, setActiveTab] = useState("overview");
-  const [userName, setUserName] = useState("Guest");
+  const [dashboard, setDashboard] = useState(DEFAULT_DASHBOARD);
+  const [showAlertModal, setShowAlertModal] = useState(false);
+  const [alertForm, setAlertForm] = useState({ message: '', category: 'ALERT', daysUntil: '' });
+  const [alertLoading, setAlertLoading] = useState(false);
 
-  React.useEffect(() => {
-    const savedName = localStorage.getItem('nyai_user_name');
-    if (savedName) setUserName(savedName);
-  }, []);
-
+  const { userName } = dashboard;
   const initials = userName.substring(0, 2).toUpperCase();
 
+  // ── fetch dashboard data ────────────────────────────────────────────────────
+  const fetchDashboard = async () => {
+    try {
+      const token = localStorage.getItem('nyai_token');
+      if (!token) return;
+      const res = await fetch(`${API_BASE_URL}/api/dashboard`, {
+        headers: { Authorization: `Bearer ${token}` }
+      });
+      if (res.ok) {
+        const data = await res.json();
+        setDashboard(data);
+        if (data.userName) localStorage.setItem('nyai_user_name', data.userName);
+      }
+    } catch (err) {
+      // Silently keep existing/default values on network failure
+      console.warn('Dashboard fetch failed, using defaults:', err.message);
+    }
+  };
+
+  useEffect(() => {
+    fetchDashboard();
+  }, []);
+
+  // ── mark all notifications read ────────────────────────────────────────────
+  const handleBellClick = async () => {
+    try {
+      const token = localStorage.getItem('nyai_token');
+      if (!token || dashboard.unreadCount === 0) return;
+      await fetch(`${API_BASE_URL}/api/notifications/read`, {
+        method: 'PATCH',
+        headers: { Authorization: `Bearer ${token}` }
+      });
+      await fetchDashboard();
+    } catch (err) {
+      console.warn('Mark-read failed:', err.message);
+    }
+  };
+
+  // ── export full audit ──────────────────────────────────────────────────────
+  const handleExportAudit = () => {
+    const lines = [
+      `nyAI Legal Audit — ${dashboard.userName} — ${new Date().toLocaleDateString('en-IN')}`,
+      `Legal Health Score: ${dashboard.legalHealthScore}`,
+      `Active Cases: ${dashboard.activeCases}`,
+      '',
+      'Upcoming Hearings:',
+      ...(dashboard.upcomingHearings.length
+        ? dashboard.upcomingHearings.map(h => `  • ${h.caseTitle} at ${h.court} — ${new Date(h.date).toLocaleDateString('en-IN')} (in ${h.daysUntil} days)`)
+        : ['  None']),
+      '',
+      'Notifications:',
+      ...(dashboard.notifications.length
+        ? dashboard.notifications.map(n => `  [${n.category}] ${n.message} — ${n.daysUntil ?? 0} days`)
+        : ['  None'])
+    ];
+    const blob = new Blob([lines.join('\n')], { type: 'text/plain' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `nyAI_Audit_${dashboard.userName.replace(/\s+/g, '_')}_${Date.now()}.txt`;
+    a.click();
+    URL.revokeObjectURL(url);
+  };
+
+  // ── submit custom alert ────────────────────────────────────────────────────
+  const handleAlertSubmit = async (e) => {
+    e.preventDefault();
+    setAlertLoading(true);
+    try {
+      const token = localStorage.getItem('nyai_token');
+      const res = await fetch(`${API_BASE_URL}/api/notifications/custom`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+        body: JSON.stringify(alertForm)
+      });
+      if (res.ok) {
+        setShowAlertModal(false);
+        setAlertForm({ message: '', category: 'ALERT', daysUntil: '' });
+        await fetchDashboard();
+      }
+    } catch (err) {
+      console.warn('Custom alert failed:', err.message);
+    } finally {
+      setAlertLoading(false);
+    }
+  };
+
+  // ── derived display values ─────────────────────────────────────────────────
+  const score = dashboard.legalHealthScore;
+  const circleOffset = 502.6 - (502.6 * (score / 100));
+
+  const stats = [
+    { label: "Docs Verified",    value: `${dashboard.docsVerified}/${dashboard.totalDocs}`, icon: <FileText size={14} /> },
+    { label: "Active Disputes",  value: `${dashboard.activeCases}`,                          icon: <Scale size={14} /> },
+    { label: "Alerts Cleared",   value: `${dashboard.alertsCleared}%`,                       icon: <CheckCircle2 size={14} /> },
+    { label: "Consultation Hrs", value: `${dashboard.consultationHrs}h`,                     icon: <Clock size={14} /> }
+  ];
+
   const sidebarLinks = [
-    { id: "overview", label: "Overview", icon: LayoutDashboard },
-    { id: "documents", label: "My Documents", icon: FileText },
-    { id: "alerts", label: "Legal Alerts", icon: Bell },
-    { id: "consultations", label: "Consultations", icon: Users },
-    { id: "settings", label: "Settings", icon: Settings }
+    { id: "overview",       label: "Overview",       icon: LayoutDashboard },
+    { id: "documents",      label: "My Documents",   icon: FileText },
+    { id: "alerts",         label: "Legal Alerts",   icon: Bell },
+    { id: "consultations",  label: "Consultations",  icon: Users },
+    { id: "settings",       label: "Settings",       icon: Settings }
   ];
 
   const recentDocs = [
-    { name: "Rental_Agreement_Mumbai", type: "Rental Agreement", date: "Oct 12, 2026", risk: "Low" },
-    { name: "Notice_Amazon_India", type: "Consumer Complaint", date: "Sep 28, 2026", risk: "Medium" },
-    { name: "Freelance_SOW", type: "Service Contract", date: "Sep 15, 2026", risk: "Low" }
-  ];
-
-  const alerts = [
-    { id: 1, title: "GST Filing Due", category: "Compliance", timeLeft: "3 days", severity: "High" },
-    { id: 2, title: "Rental Agreement Expiry", category: "Property", timeLeft: "12 days", severity: "Medium" },
-    { id: 3, title: "ITR Deadline", category: "Tax", timeLeft: "45 days", severity: "Low" }
+    { name: "Rental_Agreement_Mumbai", type: "Rental Agreement",   date: "Oct 12, 2026", risk: "Low" },
+    { name: "Notice_Amazon_India",     type: "Consumer Complaint", date: "Sep 28, 2026", risk: "Medium" },
+    { name: "Freelance_SOW",           type: "Service Contract",   date: "Sep 15, 2026", risk: "Low" }
   ];
 
   return (
@@ -76,11 +208,24 @@ const DashboardPage = () => {
                <p className="text-gray-400 font-bold text-[10px] uppercase tracking-[0.2em] italic">Your justice score and compliance heartbeat</p>
             </div>
             <div className="flex gap-4">
-               <button className="bg-white border border-gray-100 p-4 rounded-xl text-gray-400 hover:text-forest hover:scale-110 transition-all shadow-sm relative">
+               <button
+                 onClick={handleBellClick}
+                 className="bg-white border border-gray-100 p-4 rounded-xl text-gray-400 hover:text-forest hover:scale-110 transition-all shadow-sm relative"
+               >
                   <Bell size={24} />
-                  <span className="absolute top-3 right-3 w-2 h-2 bg-red-500 rounded-full animate-ping"></span>
+                  {dashboard.unreadCount > 0 && (
+                    <span className="absolute -top-1 -right-1 w-5 h-5 bg-red-500 text-white rounded-full text-[9px] font-black flex items-center justify-center">
+                      {dashboard.unreadCount > 9 ? '9+' : dashboard.unreadCount}
+                    </span>
+                  )}
+                  {dashboard.unreadCount === 0 && (
+                    <span className="absolute top-3 right-3 w-2 h-2 bg-red-500 rounded-full animate-ping"></span>
+                  )}
                </button>
-               <button className="bg-forest text-offwhite px-8 py-4 rounded-xl text-xs font-black uppercase tracking-widest flex items-center gap-3 shadow-2xl shadow-forest/20 hover:bg-forest-light transform hover:scale-105 transition-all">
+               <button
+                 onClick={handleExportAudit}
+                 className="bg-forest text-offwhite px-8 py-4 rounded-xl text-xs font-black uppercase tracking-widest flex items-center gap-3 shadow-2xl shadow-forest/20 hover:bg-forest-light transform hover:scale-105 transition-all"
+               >
                   <Download size={18} /> Export Full Audit
                </button>
             </div>
@@ -97,13 +242,13 @@ const DashboardPage = () => {
                         cx="96" cy="96" r="80" stroke="#0D3B2E" strokeWidth="16" fill="transparent" 
                         strokeDasharray="502.6"
                         initial={{ strokeDashoffset: 502.6 }}
-                        animate={{ strokeDashoffset: 502.6 - (502.6 * 0.82) }}
+                        animate={{ strokeDashoffset: circleOffset }}
                         transition={{ duration: 2, ease: "easeOut" }}
                      />
                   </svg>
                   <div className="absolute inset-0 flex flex-col items-center justify-center">
-                     <span className="text-5xl font-black text-forest heading-display tracking-tight">82</span>
-                     <span className="text-[10px] font-black text-gray-400 uppercase tracking-widest mt-1">Excellent</span>
+                     <span className="text-5xl font-black text-forest heading-display tracking-tight">{score}</span>
+                     <span className="text-[10px] font-black text-gray-400 uppercase tracking-widest mt-1">{scoreLabel(score)}</span>
                   </div>
                   <div className="absolute top-0 right-0 p-2 bg-lime text-forest rounded-lg shadow-lg rotate-12 scale-110">
                      <TrendingUp size={16} />
@@ -111,14 +256,9 @@ const DashboardPage = () => {
                </div>
 
                <div className="flex-1 space-y-6">
-                  <h3 className="text-2xl font-black text-gray-900 leading-tight">Your Legal Health Score is up <span className="text-green-500 italic">4% this month.</span></h3>
+                  <h3 className="text-2xl font-black text-gray-900 leading-tight">Your Legal Health Score is up <span className="text-green-500 italic">{dashboard.scoreChange}% this month.</span></h3>
                   <div className="grid grid-cols-2 gap-4">
-                     {[
-                       { label: "Docs Verified", value: "12/15", icon: <FileText size={14} /> },
-                       { label: "Active Disputes", value: "0", icon: <Scale size={14} /> },
-                       { label: "Alerts Cleared", value: "85%", icon: <CheckCircle2 size={14} /> },
-                       { label: "Consultation Hrs", value: "4.5h", icon: <Clock size={14} /> }
-                     ].map((stat, i) => (
+                     {stats.map((stat, i) => (
                        <div key={i} className="bg-gray-50 border border-gray-100 p-4 rounded-2xl">
                           <div className="flex items-center gap-2 text-[10px] font-black text-gray-400 uppercase tracking-widest mb-1">
                              {stat.icon} {stat.label}
@@ -140,19 +280,28 @@ const DashboardPage = () => {
                   <span className="text-lime text-[10px] font-black animate-pulse">● LIVE</span>
                </div>
                <div className="space-y-4 flex-1">
-                  {alerts.map(alert => (
-                    <div key={alert.id} className="bg-white/5 border border-white/10 p-4 rounded-2xl group hover:bg-white/10 transition-all cursor-pointer">
-                       <div className="flex justify-between items-start mb-2">
-                          <span className={`text-[9px] font-black uppercase px-2 py-0.5 rounded-full ${alert.severity === 'High' ? 'bg-red-500 text-white' : alert.severity === 'Medium' ? 'bg-amber-400 text-forest' : 'bg-lime text-forest'}`}>
-                            {alert.category}
-                          </span>
-                          <p className="text-[10px] text-white/30 font-bold uppercase tracking-widest font-mono italic">in {alert.timeLeft}</p>
-                       </div>
-                       <h5 className="text-offwhite font-bold text-sm group-hover:text-lime transition-colors">{alert.title}</h5>
-                    </div>
-                  ))}
+                  {dashboard.notifications.length > 0 ? (
+                    dashboard.notifications.map((n, i) => (
+                      <div key={n._id || i} className="bg-white/5 border border-white/10 p-4 rounded-2xl group hover:bg-white/10 transition-all cursor-pointer">
+                         <div className="flex justify-between items-start mb-2">
+                            <span className={`text-[9px] font-black uppercase px-2 py-0.5 rounded-full ${categoryBadgeClass(n.category)}`}>
+                              {n.category}
+                            </span>
+                            <p className="text-[10px] text-white/30 font-bold uppercase tracking-widest font-mono italic">in {n.daysUntil ?? 0} days</p>
+                         </div>
+                         <h5 className="text-offwhite font-bold text-sm group-hover:text-lime transition-colors">{n.message}</h5>
+                      </div>
+                    ))
+                  ) : (
+                    <p className="text-white/30 text-xs font-bold italic text-center mt-4">No notifications yet.</p>
+                  )}
                </div>
-               <button className="w-full bg-lime text-forest font-black py-4 rounded-2xl text-xs uppercase tracking-widest mt-8 shadow-xl shadow-lime/10 hover:scale-105 transition-all">Add Custom Alert <Plus size={16} className="inline ml-2" /></button>
+               <button
+                 onClick={() => setShowAlertModal(true)}
+                 className="w-full bg-lime text-forest font-black py-4 rounded-2xl text-xs uppercase tracking-widest mt-8 shadow-xl shadow-lime/10 hover:scale-105 transition-all"
+               >
+                 Add Custom Alert <Plus size={16} className="inline ml-2" />
+               </button>
             </div>
          </div>
 
@@ -200,13 +349,7 @@ const DashboardPage = () => {
                      <p className="text-[10px] font-black text-green-500">8 AVAILABLE</p>
                   </div>
                   <div className="space-y-6">
-                     {[
-                       { label: "Income Tax Proof", done: true },
-                       { label: "Rental Renewal", done: false },
-                       { label: "IP Trademark Status", done: true },
-                       { label: "GST Filing Status", done: true },
-                       { label: "Family Will Update", done: false }
-                     ].map((item, i) => (
+                     {dashboard.complianceItems.map((item, i) => (
                        <div key={i} className="flex items-center justify-between group cursor-pointer">
                           <div className="flex items-center gap-4">
                              <div className={`w-10 h-10 rounded-xl flex items-center justify-center ${item.done ? 'bg-green-50 text-green-500' : 'bg-gray-50 text-gray-400 group-hover:bg-amber-50 group-hover:text-amber-500 transition-colors'}`}>
@@ -236,6 +379,61 @@ const DashboardPage = () => {
             </div>
          </div>
       </main>
+
+      {/* Custom Alert Modal */}
+      {showAlertModal && (
+        <div className="fixed inset-0 z-50 bg-black/40 backdrop-blur-sm flex items-center justify-center p-4">
+          <div className="bg-white rounded-[2rem] p-10 w-full max-w-md shadow-2xl">
+            <div className="flex justify-between items-center mb-8">
+              <h3 className="text-xl font-black text-gray-900 heading-display tracking-tighter">Add Custom Alert</h3>
+              <button onClick={() => setShowAlertModal(false)} className="p-2 text-gray-400 hover:text-forest rounded-xl hover:bg-gray-50 transition-all"><X size={20} /></button>
+            </div>
+            <form onSubmit={handleAlertSubmit} className="space-y-6">
+              <div>
+                <label className="text-[10px] font-black text-gray-400 uppercase tracking-widest block mb-2">Message</label>
+                <input
+                  type="text"
+                  required
+                  value={alertForm.message}
+                  onChange={e => setAlertForm(f => ({ ...f, message: e.target.value }))}
+                  className="w-full border border-gray-100 bg-gray-50 rounded-2xl px-6 py-4 text-sm font-medium focus:outline-none focus:border-lime"
+                  placeholder="e.g. GST filing due next week"
+                />
+              </div>
+              <div>
+                <label className="text-[10px] font-black text-gray-400 uppercase tracking-widest block mb-2">Category</label>
+                <select
+                  value={alertForm.category}
+                  onChange={e => setAlertForm(f => ({ ...f, category: e.target.value }))}
+                  className="w-full border border-gray-100 bg-gray-50 rounded-2xl px-6 py-4 text-sm font-medium focus:outline-none focus:border-lime"
+                >
+                  {['COMPLIANCE', 'PROPERTY', 'TAX', 'HEARING', 'ALERT'].map(c => (
+                    <option key={c} value={c}>{c}</option>
+                  ))}
+                </select>
+              </div>
+              <div>
+                <label className="text-[10px] font-black text-gray-400 uppercase tracking-widest block mb-2">Days Until</label>
+                <input
+                  type="number"
+                  min="0"
+                  value={alertForm.daysUntil}
+                  onChange={e => setAlertForm(f => ({ ...f, daysUntil: e.target.value }))}
+                  className="w-full border border-gray-100 bg-gray-50 rounded-2xl px-6 py-4 text-sm font-medium focus:outline-none focus:border-lime"
+                  placeholder="e.g. 7"
+                />
+              </div>
+              <button
+                type="submit"
+                disabled={alertLoading}
+                className="w-full bg-forest text-lime font-black py-4 rounded-2xl text-xs uppercase tracking-widest hover:bg-forest-light transition-all shadow-xl shadow-forest/20"
+              >
+                {alertLoading ? 'Saving...' : 'Add Alert'}
+              </button>
+            </form>
+          </div>
+        </div>
+      )}
     </div>
   );
 };

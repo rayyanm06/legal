@@ -17,9 +17,11 @@ import { searchCases } from './scrapers/indianKanoon.js';
 import { findSimilarCases, upsertCase } from './ml/vectorStore.js';
 import { predictOutcome } from './ml/outcomeModel.js';
 import scrapeJob from './jobs/scrapeJob.js';
+import reminderJob from './jobs/reminderJob.js';
 
-// Start background case-seeding job (runs once after 5s, then daily at 2am IST)
+// Start background jobs
 scrapeJob.start();
+reminderJob.start();
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
@@ -81,6 +83,23 @@ const MONGO_URI = process.env.MONGO_URI || 'mongodb://localhost:27017/nyai';
 mongoose.connect(MONGO_URI)
   .then(() => console.log('✅ Connected to MongoDB via Mongoose'))
   .catch(err => console.error('❌ MongoDB Connection Error:', err));
+
+// ─── AUTH MIDDLEWARE ───
+const protect = async (req, res, next) => {
+  let token;
+  if (req.headers.authorization?.startsWith('Bearer')) {
+    try {
+      token = req.headers.authorization.split(' ')[1];
+      const decoded = jwt.verify(token, process.env.JWT_SECRET || 'nyAI_super_secret_dev_key');
+      req.user = await User.findById(decoded.id).select('-password');
+      next();
+    } catch(err) {
+      res.status(401).json({ error: 'Not authorized' });
+    }
+  } else {
+    res.status(401).json({ error: 'No token provided' });
+  }
+};
 
 // ─── AUTHENTICATION ROUTES ───
 const generateToken = (id) => {
@@ -1161,8 +1180,218 @@ Response Format (JSON ONLY):
 });
 
 
+// ─── DASHBOARD API ROUTES ─────────────────────────────────────────────────────
+
+// 1. GET /api/dashboard — main dashboard data feed
+app.get('/api/dashboard', protect, async (req, res) => {
+  try {
+    const user = req.user;
+
+    const activeCases = user.trackedCases.filter(c => c.status === 'active').length;
+
+    const alertsCleared = user.totalAlerts > 0
+      ? Math.round((user.alertsCleared / user.totalAlerts) * 100)
+      : 0;
+
+    const sortedNotifications = [...user.notifications]
+      .sort((a, b) => (a.daysUntil ?? 0) - (b.daysUntil ?? 0))
+      .slice(0, 5);
+
+    const unreadCount = user.notifications.filter(n => !n.read).length;
+
+    const upcomingHearings = user.trackedCases
+      .flatMap(c => c.hearings.map(h => ({
+        caseId: c.caseId,
+        caseTitle: c.caseTitle,
+        court: c.court,
+        category: c.category,
+        date: h.date,
+        notes: h.notes,
+        daysUntil: Math.ceil((new Date(h.date) - new Date()) / (1000 * 60 * 60 * 24))
+      })))
+      .filter(h => h.daysUntil >= 0)
+      .sort((a, b) => a.daysUntil - b.daysUntil)
+      .slice(0, 5);
+
+    res.json({
+      userName: user.name,
+      legalHealthScore: user.legalHealthScore,
+      scoreChange: 4,
+      docsVerified: user.docsVerified,
+      totalDocs: user.totalDocs,
+      activeCases,
+      alertsCleared,
+      consultationHrs: user.consultationHrs,
+      notifications: sortedNotifications,
+      unreadCount,
+      trackedCases: user.trackedCases,
+      upcomingHearings,
+      complianceItems: [
+        { label: 'Income Tax Proof', done: true },
+        { label: 'Rental Renewal', done: false },
+        { label: 'IP Trademark Status', done: true },
+        { label: 'GST Filing Status', done: true },
+        { label: 'Family Will Update', done: false }
+      ]
+    });
+  } catch (err) {
+    console.error('Dashboard Error:', err);
+    res.status(500).json({ error: 'Failed to load dashboard.' });
+  }
+});
+
+// 2. POST /api/cases — add tracked case
+app.post('/api/cases', protect, async (req, res) => {
+  const { caseId, caseTitle, court, state, category, filingDate } = req.body;
+  if (!caseId || !caseTitle) {
+    return res.status(400).json({ error: 'caseId and caseTitle are required.' });
+  }
+  try {
+    const user = req.user;
+
+    user.trackedCases.push({ caseId, caseTitle, court, state, category, filingDate: filingDate ? new Date(filingDate) : undefined });
+
+    user.notifications.push({
+      message: `Case ${caseId} — ${caseTitle} added`,
+      category: 'ALERT',
+      daysUntil: 0,
+      read: false
+    });
+    user.totalAlerts += 1;
+
+    user.recalcHealthScore();
+    await user.save();
+
+    res.json({ success: true, trackedCases: user.trackedCases });
+  } catch (err) {
+    console.error('Add Case Error:', err);
+    res.status(500).json({ error: 'Failed to add case.' });
+  }
+});
+
+// 3. POST /api/cases/:caseId/hearings — add hearing to case
+app.post('/api/cases/:caseId/hearings', protect, async (req, res) => {
+  const { date, notes } = req.body;
+  if (!date) return res.status(400).json({ error: 'Hearing date is required.' });
+
+  try {
+    const user = req.user;
+    const trackedCase = user.trackedCases.find(c => c.caseId === req.params.caseId);
+    if (!trackedCase) return res.status(404).json({ error: 'Case not found.' });
+
+    const hearingDate = new Date(date);
+    const daysUntil = Math.ceil((hearingDate - new Date()) / (1000 * 60 * 60 * 24));
+    const formattedDate = hearingDate.toLocaleDateString('en-IN', { day: 'numeric', month: 'long', year: 'numeric' });
+
+    trackedCase.hearings.push({ date: hearingDate, notes });
+
+    user.notifications.push({
+      message: `Hearing for ${trackedCase.caseTitle} on ${formattedDate}${notes ? ' — ' + notes : ''}`,
+      category: 'HEARING',
+      daysUntil,
+      read: false
+    });
+    user.totalAlerts += 1;
+
+    await user.save();
+    res.json({ success: true, case: trackedCase });
+  } catch (err) {
+    console.error('Add Hearing Error:', err);
+    res.status(500).json({ error: 'Failed to add hearing.' });
+  }
+});
+
+// 4. PATCH /api/cases/:caseId/status — update case status
+app.patch('/api/cases/:caseId/status', protect, async (req, res) => {
+  const { status } = req.body;
+  if (!['active', 'resolved', 'dropped'].includes(status)) {
+    return res.status(400).json({ error: 'Invalid status.' });
+  }
+  try {
+    const user = req.user;
+    const trackedCase = user.trackedCases.find(c => c.caseId === req.params.caseId);
+    if (!trackedCase) return res.status(404).json({ error: 'Case not found.' });
+
+    trackedCase.status = status;
+
+    if (status === 'resolved') {
+      user.notifications.push({
+        message: `Case ${trackedCase.caseId} — ${trackedCase.caseTitle} resolved`,
+        category: 'ALERT',
+        daysUntil: 0,
+        read: false
+      });
+      user.totalAlerts += 1;
+    }
+
+    user.recalcHealthScore();
+    await user.save();
+    res.json({ success: true });
+  } catch (err) {
+    console.error('Update Status Error:', err);
+    res.status(500).json({ error: 'Failed to update case status.' });
+  }
+});
+
+// 5. DELETE /api/cases/:caseId — delete tracked case
+app.delete('/api/cases/:caseId', protect, async (req, res) => {
+  try {
+    const user = req.user;
+    const before = user.trackedCases.length;
+    user.trackedCases = user.trackedCases.filter(c => c.caseId !== req.params.caseId);
+    if (user.trackedCases.length === before) return res.status(404).json({ error: 'Case not found.' });
+    user.recalcHealthScore();
+    await user.save();
+    res.json({ success: true });
+  } catch (err) {
+    console.error('Delete Case Error:', err);
+    res.status(500).json({ error: 'Failed to delete case.' });
+  }
+});
+
+// 6. PATCH /api/notifications/read — mark all notifications read
+app.patch('/api/notifications/read', protect, async (req, res) => {
+  try {
+    const user = req.user;
+    const unread = user.notifications.filter(n => !n.read).length;
+    user.notifications.forEach(n => { n.read = true; });
+    user.alertsCleared += unread;
+    await user.save();
+    res.json({ success: true });
+  } catch (err) {
+    console.error('Mark Read Error:', err);
+    res.status(500).json({ error: 'Failed to mark notifications read.' });
+  }
+});
+
+// 7. POST /api/notifications/custom — add custom alert
+app.post('/api/notifications/custom', protect, async (req, res) => {
+  const { message, category, daysUntil } = req.body;
+  if (!message) return res.status(400).json({ error: 'Message is required.' });
+  const validCategories = ['COMPLIANCE', 'PROPERTY', 'TAX', 'HEARING', 'ALERT'];
+  try {
+    const user = req.user;
+    user.notifications.push({
+      message,
+      category: validCategories.includes(category) ? category : 'ALERT',
+      daysUntil: parseInt(daysUntil) || 0,
+      read: false
+    });
+    user.totalAlerts += 1;
+    await user.save();
+    const sorted = [...user.notifications].sort((a, b) => (a.daysUntil ?? 0) - (b.daysUntil ?? 0));
+    res.json({ success: true, notifications: sorted });
+  } catch (err) {
+    console.error('Custom Alert Error:', err);
+    res.status(500).json({ error: 'Failed to add custom alert.' });
+  }
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+
 // Export for Vercel
 export default app;
+
 
 if (process.env.NODE_ENV !== 'production' && !process.env.VERCEL) {
   app.listen(PORT, () => {
