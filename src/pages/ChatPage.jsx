@@ -13,6 +13,7 @@ import { jsPDF } from 'jspdf';
 import { useTranslation } from 'react-i18next';
 import { API_ENDPOINTS } from '../api/config';
 import GavelLoading from '../components/GavelLoading';
+import pdfjsWorkerUrl from 'pdfjs-dist/build/pdf.worker.min.mjs?url';
 
 // --- Sub-components for Tools ---
 
@@ -361,7 +362,7 @@ const DocumentAnalyzer = () => {
       if (file.name.endsWith('.pdf')) {
         // Extract text from PDF using pdfjs-dist
         const pdfjsLib = await import('pdfjs-dist');
-        pdfjsLib.GlobalWorkerOptions.workerSrc = `https://cdnjs.cloudflare.com/ajax/libs/pdf.js/${pdfjsLib.version}/pdf.worker.min.mjs`;
+        pdfjsLib.GlobalWorkerOptions.workerSrc = pdfjsWorkerUrl;
 
         const arrayBuffer = await file.arrayBuffer();
         const pdf = await pdfjsLib.getDocument({ data: arrayBuffer }).promise;
