@@ -12,7 +12,7 @@ import mongoose from 'mongoose';
 import jwt from 'jsonwebtoken';
 import User from './models/User.js';
 import Lawyer from './models/Lawyer.js';
-import pdf from 'pdf-parse/lib/pdf-parse.js';
+import { PDFParse } from 'pdf-parse';
 
 // ─── ML PIPELINE — Case Strength Analyser ───────────────────────────────────
 import { searchCases } from './scrapers/indianKanoon.js';
@@ -646,7 +646,8 @@ nyAI:`;
 async function extractTextFromBuffer(buffer, fileName) {
   try {
     if (fileName && /\.pdf$/i.test(fileName)) {
-      const data = await pdf(buffer);
+      const parser = new PDFParse({ data: buffer });
+      const data = await parser.getText();
       if (data.text && data.text.trim().length > 50) {
         return data.text.substring(0, 15000);
       }
