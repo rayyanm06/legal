@@ -23,6 +23,9 @@ const extractText = (file) => {
 };
 
 const extractPDFText = async (file) => {
+  if (typeof window !== 'undefined' && window.pdfjsLib && !window.pdfjsLib.GlobalWorkerOptions.workerSrc) {
+    window.pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
+  }
   const arrayBuffer = await file.arrayBuffer();
   const pdf = await window.pdfjsLib.getDocument({ data: arrayBuffer }).promise;
   let fullText = '';
@@ -98,8 +101,10 @@ const DocumentsPage = () => {
   const [copied, setCopied] = useState(false);
 
   const selectFile = (selectedFile) => {
-    if (!selectedFile) return;
     setFile(selectedFile);
+    if (!selectedFile) {
+      setDocText('');
+    }
     setAnalysisResult(null);
     setError('');
     setWarning('');
@@ -121,9 +126,9 @@ const DocumentsPage = () => {
       // Extract text from document
       let documentText = await extractDocumentText(file);
       
-      if (documentText.length > 12000) {
-        documentText = documentText.substring(0, 12000);
-        setWarning("⚠️ Document is large — analysing first section only.");
+      if (documentText.length > 15000) {
+        documentText = documentText.substring(0, 15000);
+        setWarning("⚠️ Document is massive — analysing the first comprehensive section only.");
       }
 
       setDocText(documentText);
@@ -137,23 +142,27 @@ const DocumentsPage = () => {
         },
         body: JSON.stringify({
           model: "gpt-4o-mini",
-          max_tokens: 2000,
+          response_format: { type: "json_object" },
           messages: [
             {
               role: "system",
-              content: `You are an expert legal document analyst and risk assessment specialist. Your job is to analyse documents and identify risk flags, problematic clauses, and areas of concern.\n\nAlways respond with ONLY a valid JSON object.\nNo explanation before or after. No markdown. No backticks.\nStart your response with { and end with }`
+              content: `You are an expert legal document analyst. Your job is to analyse documents and identify risk flags. Always respond in JSON format ONLY.`
             },
             {
               role: "user",
-              content: `Analyse this document and identify all risk flags, problematic clauses, and areas of concern.\n\nDocument content:\n"""\n${documentText}\n"""\n\nRespond with ONLY this JSON structure:\n{\n  "documentType": "what type of document this is",\n  "overallRiskLevel": "Low" or "Medium" or "High" or "Critical",\n  "summary": "2-3 sentence plain English summary of what this document is",\n  "riskFlags": [\n    {\n      "id": 1,\n      "severity": "Low" or "Medium" or "High" or "Critical",\n      "category": "category of risk e.g. Financial, Legal, Privacy, Liability",\n      "title": "short title of the risk",\n      "description": "2-3 sentences explaining what the risk is",\n      "exactText": "the exact clause or sentence from the document that triggers this flag, or null if not applicable",\n      "recommendation": "what the user should do about this risk"\n    }\n  ],\n  "positiveFindings": [\n    "one sentence for each thing that looks good or fair in the document"\n  ],\n  "totalRisksFound": number,\n  "criticalCount": number,\n  "highCount": number,\n  "mediumCount": number,\n  "lowCount": number\n}\n\nFlag everything that could harm the user including:\n- Unfair penalty clauses\n- Hidden fees or auto-renewals\n- Unreasonable liability waivers\n- Vague or one-sided termination clauses\n- Data privacy or sharing concerns\n- Missing standard protections\n- Ambiguous language that favours one party\n- Jurisdiction clauses that are problematic\n\nIf the document has no serious risks, still list minor ones.\nAlways find at least something to flag — no document is perfect.`
+              content: `Analyse this document and identify all risk flags, problematic clauses, and areas of concern.\n\nDocument content:\n"""\n${documentText}\n"""\n\nRespond with ONLY this exact JSON structure (populate the arrays and numbers appropriately):\n{\n  "documentType": "what type of document this is",\n  "overallRiskLevel": "Low" or "Medium" or "High" or "Critical",\n  "summary": "2-3 sentence plain English summary of what this document is",\n  "riskFlags": [\n    {\n      "id": 1,\n      "severity": "Low" or "Medium" or "High" or "Critical",\n      "category": "category of risk e.g. Financial, Legal, Privacy, Liability",\n      "title": "short title of the risk",\n      "description": "2-3 sentences explaining what the risk is",\n      "exactText": "the exact clause or sentence from the document that triggers this flag",\n      "recommendation": "what the user should do about this risk"\n    }\n  ],\n  "positiveFindings": [\n    "one sentence for each thing that looks good or fair in the document"\n  ],\n  "totalRisksFound": 0,\n  "criticalCount": 0,\n  "highCount": 0,\n  "mediumCount": 0,\n  "lowCount": 0\n}\n\nLimit to top 15 most important risk flags. If no serious risks, list minor ones. Always find at least something.`
             }
           ]
         })
       });
 
       if (!response.ok) {
-        const errData = await response.json();
-        throw new Error(errData.error?.message || "OpenAI API call failed");
+        let errStr = "OpenAI API call failed";
+        try {
+          const errData = await response.json();
+          errStr = errData.error?.message || errStr;
+        } catch(e) {}
+        throw new Error(errStr);
       }
 
       const data = await response.json();
