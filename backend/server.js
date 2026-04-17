@@ -726,10 +726,15 @@ RULES:
   try {
     const PROVIDERS = getProviders();
     let parsedData = null;
+    let analysisStep = 'Initialization';
 
-    // 1. Try OpenAI with JSON mode first (guaranteed valid JSON)
+    console.log(`[Doc Analyzer] Starting analysis for: ${fileName || 'unnamed'} (${text.length} chars)`);
+
+    // 1. Try OpenAI with JSON mode first
     if (PROVIDERS.OPENAI.key) {
+      analysisStep = 'OpenAI Analysis';
       try {
+        console.log('[Doc Analyzer] Attempting OpenAI...');
         const resp = await fetch(PROVIDERS.OPENAI.url, {
           method: "POST",
           headers: {
@@ -749,16 +754,21 @@ RULES:
         if (resp.ok) {
           const data = await resp.json();
           parsedData = JSON.parse(data.choices[0].message.content);
-          console.log("✅ Document analysis via OpenAI JSON mode");
+          console.log("✅ Doc Analyzer: OpenAI Success");
+        } else {
+          const errBody = await resp.text().catch(() => 'No error body');
+          console.warn(`[Doc Analyzer] OpenAI Failed (${resp.status}): ${errBody}`);
         }
       } catch (e) {
-        console.warn("OpenAI JSON mode failed for doc analysis:", e.message);
+        console.warn("[Doc Analyzer] OpenAI Exception:", e.message);
       }
     }
 
     // 2. Fallback: Gemini with JSON mode
     if (!parsedData && PROVIDERS.GEMINI.key) {
+      analysisStep = 'Gemini Analysis';
       try {
+        console.log('[Doc Analyzer] Attempting Gemini fallback...');
         const url = `${PROVIDERS.GEMINI.url}/${PROVIDERS.GEMINI.model}:generateContent?key=${PROVIDERS.GEMINI.key}`;
         const resp = await fetch(url, {
           method: "POST",
@@ -771,15 +781,20 @@ RULES:
         if (resp.ok) {
           const data = await resp.json();
           parsedData = JSON.parse(data.candidates[0].content.parts[0].text);
-          console.log("✅ Document analysis via Gemini JSON mode");
+          console.log("✅ Doc Analyzer: Gemini Success");
+        } else {
+          const errBody = await resp.text().catch(() => 'No error body');
+          console.warn(`[Doc Analyzer] Gemini Failed (${resp.status}): ${errBody}`);
         }
       } catch (e) {
-        console.warn("Gemini JSON mode failed for doc analysis:", e.message);
+        console.warn("[Doc Analyzer] Gemini Exception:", e.message);
       }
     }
 
     // 3. Final fallback: generic dispatcher
     if (!parsedData) {
+      analysisStep = 'Generic Fallback Analysis';
+      console.log('[Doc Analyzer] Attempting Generic Dispatcher...');
       const { text: resultText } = await handleAIRequest(userPrompt, 2000);
       try {
         parsedData = JSON.parse(resultText.replace(/```json|```/g, '').trim());
@@ -787,25 +802,31 @@ RULES:
         const objMatch = resultText.match(/\{[\s\S]*\}/);
         parsedData = objMatch ? JSON.parse(objMatch[0]) : null;
       }
+      if (parsedData) console.log("✅ Doc Analyzer: Generic Dispatcher Success");
     }
 
     if (!parsedData) {
-      return res.status(500).json({ error: "Failed to parse AI analysis. Please try again." });
+      analysisStep = 'Parsing Final Result';
+      console.error("[Doc Analyzer] All analysis providers failed.");
+      return res.status(500).json({ error: "All AI providers failed to return a valid analysis. Please try a simpler document or try again later." });
     }
 
     // Ensure required fields have defaults
     parsedData.healthScore     = parsedData.healthScore     ?? 50;
     parsedData.riskLevel       = parsedData.riskLevel       ?? 'Medium';
-    parsedData.riskFlags       = parsedData.riskFlags       ?? [];
-    parsedData.keyClauses      = parsedData.keyClauses      ?? [];
+    parsedData.riskFlags       = parsedData.riskFlags ?? [];
+    parsedData.keyClauses      = parsedData.keyClauses ?? [];
     parsedData.missingClauses  = parsedData.missingClauses  ?? [];
     parsedData.recommendations = parsedData.recommendations ?? [];
     parsedData.extractedText   = truncated;
 
     res.json(parsedData);
   } catch (err) {
-    console.error("Document Analyzer Error:", err);
-    res.status(500).json({ error: "Failed to analyze document." });
+    console.error(`[Doc Analyzer ERROR] at step ${analysisStep}:`, err);
+    res.status(500).json({ 
+      error: `Failed to analyze document at stage: ${analysisStep}.`,
+      details: err.message 
+    });
   }
 });
 
