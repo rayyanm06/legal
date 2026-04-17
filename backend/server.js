@@ -12,6 +12,7 @@ import mongoose from 'mongoose';
 import jwt from 'jsonwebtoken';
 import User from './models/User.js';
 import Lawyer from './models/Lawyer.js';
+import pdf from 'pdf-parse/lib/pdf-parse.js';
 
 // ─── ML PIPELINE — Case Strength Analyser ───────────────────────────────────
 import { searchCases } from './scrapers/indianKanoon.js';
@@ -641,38 +642,22 @@ nyAI:`;
   }
 });
 
-// ── Pure-Node PDF text extractor (no external packages) ─────────────────────
-function extractTextFromBuffer(buffer, fileName) {
+// ── PDF/Doc text extractor (Using pdf-parse for high quality) ────────────────
+async function extractTextFromBuffer(buffer, fileName) {
   try {
     if (fileName && /\.pdf$/i.test(fileName)) {
-      const raw = buffer.toString('binary');
-      const parts = [];
-
-      // Extract text between BT/ET markers (PDF text stream)
-      const btEt = /BT([\s\S]*?)ET/g;
-      let m;
-      while ((m = btEt.exec(raw)) !== null) {
-        const block = m[1];
-        const tj = /\(([^)\\]*(?:\\.[^)\\]*)*)\)\s*Tj|\[([^\]]*)\]\s*TJ/g;
-        let t;
-        while ((t = tj.exec(block)) !== null) {
-          const txt = (t[1] || t[2] || '')
-            .replace(/\\n/g, '\n').replace(/\\r/g, '').replace(/\\\(/g, '(').replace(/\\\)/g, ')').replace(/\\\\/g, '\\');
-          if (txt.trim()) parts.push(txt);
-        }
+      const data = await pdf(buffer);
+      if (data.text && data.text.trim().length > 50) {
+        return data.text.substring(0, 15000);
       }
-      const pdfText = parts.join(' ').replace(/\s+/g, ' ').trim();
-      if (pdfText.length > 80) return pdfText.substring(0, 15000);
-
-      // Fallback: grab printable ASCII runs ≥ 4 chars
-      const runs = raw.match(/[ -~]{4,}/g) || [];
-      return runs.join(' ').replace(/\s+/g, ' ').trim().substring(0, 15000);
     }
-    // Plain text / DOCX (treat as UTF-8)
-    return buffer.toString('utf8').substring(0, 15000);
+    // Fallback for DOCX/TXT/Malformed PDF
+    const text = buffer.toString('utf8', 0, 15000);
+    // Basic cleanup: remove null chars or non-printable junk
+    return text.replace(/[^\x20-\x7E\n\r\t]/g, '').substring(0, 15000);
   } catch (e) {
     console.warn('Text extraction error:', e.message);
-    return buffer.toString('utf8', 0, 10000);
+    return buffer.toString('utf8', 0, 10000).replace(/[^\x20-\x7E\n\r\t]/g, '');
   }
 }
 
@@ -684,9 +669,9 @@ app.post('/api/analyze-document', async (req, res) => {
   if (fileContent && !text) {
     try {
       const buf = Buffer.from(fileContent, 'base64');
-      text = extractTextFromBuffer(buf, fileName || '');
+      text = await extractTextFromBuffer(buf, fileName || '');
     } catch (e) {
-      return res.status(400).json({ error: 'Could not decode uploaded file.' });
+      return res.status(400).json({ error: 'Could not decode or extract text from uploaded file.' });
     }
   }
 
