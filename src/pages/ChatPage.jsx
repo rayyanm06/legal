@@ -336,6 +336,13 @@ const DocumentAnalyzer = () => {
         body: JSON.stringify(body)
       });
       
+      const contentType = res.headers.get("content-type");
+      if (contentType && contentType.includes("text/html")) {
+        const text = await res.text();
+        console.error("Server returned HTML instead of JSON:", text.substring(0, 200));
+        throw new Error("Server Error: The AI service returned an invalid response (HTML). This usually happens during a timeout or if the service is temporarily overloaded.");
+      }
+
       const data = await res.json();
       
       if (!res.ok) {

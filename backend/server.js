@@ -20,15 +20,21 @@ import { predictOutcome } from './ml/outcomeModel.js';
 import scrapeJob from './jobs/scrapeJob.js';
 import reminderJob from './jobs/reminderJob.js';
 
-// Start background jobs
-scrapeJob.start();
-reminderJob.start();
+// Start background jobs only on traditional servers, not on Vercel serverless functions
+if (!process.env.VERCEL) {
+  console.log('🚀 Starting background jobs (Scraper & Reminders)');
+  scrapeJob.start();
+  reminderJob.start();
+} else {
+  console.log('☁️  Vercel environment detected: Background jobs disabled to prevent crashes.');
+}
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
 const app = express();
 app.use(cors());
-app.use(express.json());
+app.use(express.json({ limit: '10mb' }));
+app.use(express.urlencoded({ extended: true, limit: '10mb' }));
 
 const PORT = 5000;
 
@@ -368,7 +374,9 @@ async function handleAIRequest(prompt, maxTokens = 1500) {
   const PROVIDERS = getProviders();
   let result = null;
   let engine = "None";
-  const TIMEOUT_MS = 12000; // 12s hard timeout per provider
+  // For Vercel Hobby (10s limit), we must keep the individual provider timeout very short
+  const isVercel = !!process.env.VERCEL;
+  const TIMEOUT_MS = isVercel ? 8000 : 12000; 
 
   // 1. FASTEST (PAID): Try OpenAI first — paid key, lowest latency
   if (!result && PROVIDERS.OPENAI.key) {
