@@ -355,7 +355,18 @@ async function handleAIRequest(prompt, maxTokens = 1500) {
   let engine = "None";
   const TIMEOUT_MS = 12000; // 12s hard timeout per provider
 
-  // 1. FASTEST: Try Gemini first (we have a key, it's sub-3s)
+  // 1. FASTEST (PAID): Try OpenAI first — paid key, lowest latency
+  if (!result && PROVIDERS.OPENAI.key) {
+    try {
+      result = await withTimeout(callOpenAI(prompt, maxTokens, PROVIDERS.OPENAI), TIMEOUT_MS, 'OpenAI');
+      engine = "OpenAI (GPT-4o-mini)";
+      console.log(`✅ AI via ${engine}`);
+    } catch (e) {
+      console.warn("OpenAI failed:", e.message);
+    }
+  }
+
+  // 2. FALLBACK: Gemini (free key, sub-3s)
   if (!result && PROVIDERS.GEMINI.key) {
     const geminiModels = [PROVIDERS.GEMINI.model, PROVIDERS.GEMINI.fallbackModel].filter(Boolean);
     for (const model of geminiModels) {
@@ -371,7 +382,7 @@ async function handleAIRequest(prompt, maxTokens = 1500) {
     }
   }
 
-  // 2. Try OpenRouter free models with timeout
+  // 3. Try OpenRouter free models with timeout
   if (!result && PROVIDERS.OPENROUTER.key) {
     const models = Array.isArray(PROVIDERS.OPENROUTER.models) ? PROVIDERS.OPENROUTER.models : [PROVIDERS.OPENROUTER.model];
     for (const model of models) {
@@ -386,7 +397,7 @@ async function handleAIRequest(prompt, maxTokens = 1500) {
     }
   }
 
-  // 3. Novita AI
+  // 4. Novita AI
   if (!result && PROVIDERS.OLLAMA.key) {
     try {
       result = await withTimeout(callOllama(prompt, maxTokens, PROVIDERS.OLLAMA), TIMEOUT_MS, 'Novita');
@@ -397,7 +408,7 @@ async function handleAIRequest(prompt, maxTokens = 1500) {
     }
   }
 
-  // 4. Anthropic
+  // 5. Anthropic
   if (!result && PROVIDERS.ANTHROPIC.key) {
     try {
       result = await withTimeout(callAnthropic(prompt, maxTokens, PROVIDERS.ANTHROPIC), TIMEOUT_MS, 'Anthropic');
@@ -405,17 +416,6 @@ async function handleAIRequest(prompt, maxTokens = 1500) {
       console.log(`✅ AI via ${engine}`);
     } catch (e) {
       console.warn("Anthropic failed:", e.message);
-    }
-  }
-
-  // 5. OpenAI
-  if (!result && PROVIDERS.OPENAI.key) {
-    try {
-      result = await withTimeout(callOpenAI(prompt, maxTokens, PROVIDERS.OPENAI), TIMEOUT_MS, 'OpenAI');
-      engine = "OpenAI";
-      console.log(`✅ AI via ${engine}`);
-    } catch (e) {
-      console.warn("OpenAI failed:", e.message);
     }
   }
 
