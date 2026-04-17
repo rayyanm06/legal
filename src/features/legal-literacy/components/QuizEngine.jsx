@@ -108,9 +108,23 @@ Make each scenario genuinely different.
 Do NOT repeat situations across questions.`;
 
       const response = await askClaude(prompt, 2000);
-      const generatedQuestions = parseJSONResponse(response);
+      let generatedQuestions = parseJSONResponse(response);
       
-      setScenarios(generatedQuestions || []);
+      // Some LLMs return an object like { questions: [...] } instead of a raw array
+      if (generatedQuestions && !Array.isArray(generatedQuestions)) {
+        const potentialArray = Object.values(generatedQuestions).find(v => Array.isArray(v));
+        if (potentialArray) {
+          generatedQuestions = potentialArray;
+        } else {
+          generatedQuestions = [generatedQuestions]; // Wrap single object in array
+        }
+      }
+
+      if (!generatedQuestions || !Array.isArray(generatedQuestions) || generatedQuestions.length === 0 || !generatedQuestions[0].options) {
+        throw new Error("AI returned malformed or empty questions.");
+      }
+      
+      setScenarios(generatedQuestions);
       setCurrentIdx(0);
       setScore(0);
       setHasAnswered(false);
