@@ -582,40 +582,33 @@ app.post('/api/analyze-document', async (req, res) => {
   console.log(`[Analyzer] Processing document of length: ${documentText.length}`);
   const truncated = documentText.substring(0, 8000);
 
-  const systemPrompt = `You are an expert Indian legal contract analyst.
-Analyze the document and provide a structured review in JSON format.
-You MUST identify ALL risks and unfair clauses. No document is perfect.
+  const systemPrompt = `You are a "Shark Lawyer" with 30 years of experience in Indian Law.
+Your goal is to PROTECT your client by being EXTREMELY CRITICAL of any document.
+You must find EVERY possible risk, ambiguity, or unfair clause. 
+Never be lenient. If a clause is even slightly vague, flag it as a Danger or Warning.
+Always find at least 3-5 risk flags for any real document.
 Return ONLY a valid JSON object.`;
 
-  const userPrompt = `Review this document and provide a DETAILED JSON analysis:
+  const userPrompt = `Analyze this document for ANY possible risks to my interest:
 ---
 ${truncated}
 ---
-The result must be a JSON object following this EXACT schema:
+The result must be a JSON object with this structure:
 {
   "documentType": "String",
   "partyA": "String",
   "partyB": "String",
-  "healthScore": 0-100,
+  "healthScore": 0-100 (Be harsh!),
   "riskLevel": "Low|Medium|High|Critical",
-  "summary": "String (Summary of document)",
+  "summary": "1-2 sentences of the biggest dangers",
   "riskFlags": [
-    {
-      "type": "Danger|Warning|Info",
-      "title": "Short title of the risk",
-      "desc": "Detailed explanation of the legal risk under Indian law",
-      "recommendation": "How to mitigate this risk"
-    }
+    { "type": "Danger|Warning|Info", "title": "...", "desc": "...", "recommendation": "..." }
   ],
   "keyClauses": [
-    {
-      "clause": "Name of clause",
-      "text": "The relevant excerpt",
-      "status": "Fair|Vague|Unfair"
-    }
+    { "clause": "...", "text": "...", "status": "Fair|Vague|Unfair" }
   ],
-  "missingClauses": ["List of missing important clauses"],
-  "recommendations": ["Actionable steps"]
+  "missingClauses": ["..."],
+  "recommendations": ["..."]
 }`;
 
   try {
@@ -625,7 +618,7 @@ The result must be a JSON object following this EXACT schema:
     // 1. Try OpenAI JSON mode
     if (PROVIDERS.OPENAI.key) {
       try {
-        console.log("[Analyzer] Attempting OpenAI...");
+        console.log("[Analyzer] Attempting OpenAI (Shark Mode)...");
         const resp = await axios.post(PROVIDERS.OPENAI.url, {
           model: PROVIDERS.OPENAI.model,
           messages: [
@@ -652,7 +645,7 @@ The result must be a JSON object following this EXACT schema:
     // 2. Try Gemini JSON mode
     if (!parsedData && PROVIDERS.GEMINI.key) {
       try {
-        console.log("[Analyzer] Attempting Gemini...");
+        console.log("[Analyzer] Attempting Gemini (Shark Mode)...");
         const url = `${PROVIDERS.GEMINI.url}/${PROVIDERS.GEMINI.model}:generateContent?key=${PROVIDERS.GEMINI.key}`;
         const resp = await axios.post(url, {
           contents: [{ parts: [{ text: `${systemPrompt}\n\n${userPrompt}` }] }],
@@ -667,49 +660,56 @@ The result must be a JSON object following this EXACT schema:
       }
     }
 
-    // 3. Final fallback: Generic dispatcher
+    // 3. Fallback
     if (!parsedData) {
-      console.log("[Analyzer] Falling back to handleAIRequest...");
       try {
         const { text } = await handleAIRequest(userPrompt, 2000);
-        try {
-          parsedData = JSON.parse(text.replace(/```json|```/g, '').trim());
-        } catch (e) {
-          const objMatch = text.match(/\{[\s\S]*\}/);
-          parsedData = objMatch ? JSON.parse(objMatch[0]) : null;
-        }
+        parsedData = JSON.parse(text.replace(/```json|```/g, '').trim());
       } catch (e) {
-        console.error("❌ [Analyzer] All providers failed:", e.message);
+        const objMatch = (typeof text === 'string' ? text : '').match(/\{[\s\S]*\}/);
+        parsedData = objMatch ? JSON.parse(objMatch[0]) : null;
       }
     }
 
     if (!parsedData) {
-      return res.status(500).json({ error: "Legal AI could not analyze this document." });
+      return res.status(500).json({ error: "Shark AI is resting. Please try again." });
     }
 
-    // --- NORMALIZATION LAYER ---
-    // Merge potential alternative keys into riskFlags
-    const altRisks = parsedData.risks || parsedData.issues || parsedData.flags || [];
-    if ((!parsedData.riskFlags || parsedData.riskFlags.length === 0) && altRisks.length > 0) {
-      parsedData.riskFlags = altRisks;
-    }
+    // --- SMART NORMALIZER ---
+    const findKey = (data, keywords) => {
+      const keys = Object.keys(data);
+      const found = keys.find(k => keywords.some(kw => k.toLowerCase().includes(kw)));
+      return found ? data[found] : null;
+    };
 
-    // Ensure required fields have defaults
-    parsedData.healthScore = parsedData.healthScore ?? 50;
-    parsedData.riskLevel = parsedData.riskLevel ?? "Medium";
+    // Normalize Risks
+    const risks = findKey(parsedData, ['risk', 'issue', 'flag', 'danger', 'alert']) || [];
+    if (Array.isArray(risks) && risks.length > 0) parsedData.riskFlags = risks;
+
+    // Normalize Clauses
+    const clauses = findKey(parsedData, ['clause', 'point', 'section', 'item']) || [];
+    if (Array.isArray(clauses) && clauses.length > 0) parsedData.keyClauses = clauses;
+
+    // Final mapping for internal structure
     parsedData.riskFlags = (parsedData.riskFlags || []).map(f => ({
-      type: f.type || 'Info',
-      title: f.title || f.issue || f.label || 'Risk Identified',
-      desc: f.desc || f.description || f.explanation || '',
-      recommendation: f.recommendation || f.suggestion || ''
+      type: f.type || 'Warning',
+      title: f.title || f.issue || f.label || 'Legal Risk',
+      desc: f.desc || f.description || f.text || '',
+      recommendation: f.recommendation || f.suggestion || f.fix || ''
     }));
-    parsedData.keyClauses = parsedData.keyClauses ?? [];
-    parsedData.missingClauses = parsedData.missingClauses ?? [];
-    parsedData.recommendations = parsedData.recommendations ?? [];
+
+    parsedData.keyClauses = (parsedData.keyClauses || []).map(c => ({
+      clause: c.clause || c.title || c.label || 'Clause',
+      text: c.text || c.content || c.excerpt || '',
+      status: c.status || 'Vague'
+    }));
+
+    parsedData.healthScore = parsedData.healthScore ?? 50;
+    parsedData.documentType = parsedData.documentType || 'Legal Document';
 
     res.json(parsedData);
   } catch (err) {
-    console.error("❌ Document Analyzer Runtime Error:", err);
+    console.error("❌ Shark Analyzer Error:", err);
     res.status(500).json({ error: "An unexpected error occurred." });
   }
 });
