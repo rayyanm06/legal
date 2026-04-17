@@ -15,6 +15,16 @@ import { API_ENDPOINTS } from '../api/config';
 import GavelLoading from '../components/GavelLoading';
 import pdfjsWorkerUrl from 'pdfjs-dist/build/pdf.worker.min.mjs?url';
 
+// --- Utilities ---
+const readFileAsBase64 = (file) => {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = (e) => resolve(e.target.result.split(',')[1]);
+    reader.onerror = reject;
+    reader.readAsDataURL(file);
+  });
+};
+
 // --- Sub-components for Tools ---
 
 // Markdown renderer helper for AI responses
@@ -310,22 +320,38 @@ const DocumentAnalyzer = () => {
   const [isGeneratingResponse, setIsGeneratingResponse] = useState(false);
   const fileInputRef = useRef(null);
 
-  const handleUpload = async (textToAnalyze = documentText) => {
-    if (!textToAnalyze.trim()) return;
+  const handleUpload = async (textToAnalyze = documentText, fileName = "manual_paste", fileType = "text/plain", base64 = null) => {
     setIsAnalyzing(true);
     setHasFile(true);
+    setAnalysisResult(null);
+
     try {
+      const body = base64 
+        ? { fileContent: base64, fileName, fileType }
+        : { documentText: textToAnalyze };
+
       const res = await fetch(API_ENDPOINTS.ANALYZE, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ documentText: textToAnalyze })
+        body: JSON.stringify(body)
       });
+      
       const data = await res.json();
+      
+      if (!res.ok) {
+        throw new Error(data.error || "Analysis failed");
+      }
+
       setAnalysisResult(data);
+      if (data.extractedText) setDocumentText(data.extractedText);
       setResponseDoc("");
     } catch (err) {
       console.error(err);
-      setAnalysisResult({ error: true, summary: "Failed to reach AI analyzer." });
+      setAnalysisResult({ 
+        error: true, 
+        summary: err.message,
+        details: "Check your API keys or document format and try again."
+      });
     } finally {
       setIsAnalyzing(false);
     }
@@ -355,58 +381,16 @@ const DocumentAnalyzer = () => {
 
     setIsAnalyzing(true);
     setHasFile(true);
+    setAnalysisResult(null);
 
     try {
-      let extractedText = '';
-
-      if (file.name.endsWith('.pdf')) {
-        // Extract text from PDF using pdfjs-dist
-        const pdfjsLib = await import('pdfjs-dist');
-        pdfjsLib.GlobalWorkerOptions.workerSrc = pdfjsWorkerUrl;
-
-        const arrayBuffer = await file.arrayBuffer();
-        const pdf = await pdfjsLib.getDocument({ data: arrayBuffer }).promise;
-
-        const pageTexts = [];
-        for (let i = 1; i <= pdf.numPages; i++) {
-          const page = await pdf.getPage(i);
-          const content = await page.getTextContent();
-          const pageText = content.items.map(item => item.str).join(' ');
-          pageTexts.push(pageText);
-        }
-        extractedText = pageTexts.join('\n\n');
-      } else {
-        // .txt, .docx (read as plain text)
-        extractedText = await file.text();
-      }
-
-      if (!extractedText.trim()) {
-        setAnalysisResult({ error: true, summary: "Could not extract text from the uploaded file. The PDF may be image-based — try a text-based document." });
-        setIsAnalyzing(false);
-        return;
-      }
-
-      setDocumentText(extractedText);
-      // Now send extracted text to AI backend for real analysis
-      try {
-        const res = await fetch(API_ENDPOINTS.ANALYZE, {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ documentText: extractedText })
-        });
-        const data = await res.json();
-        setAnalysisResult(data);
-        setResponseDoc("");
-      } catch (err) {
-        console.error(err);
-        setAnalysisResult({ error: true, summary: "Failed to reach AI analyzer." });
-      }
+      const base64 = await readFileAsBase64(file);
+      await handleUpload(null, file.name, file.type, base64);
     } catch (err) {
       console.error("File read error:", err);
       setAnalysisResult({ error: true, summary: "Failed to read the uploaded file: " + err.message });
     } finally {
       setIsAnalyzing(false);
-      // Reset file input so the same file can be re-uploaded
       if (fileInputRef.current) fileInputRef.current.value = '';
     }
   };
@@ -518,9 +502,28 @@ const DocumentAnalyzer = () => {
                     </div>
                   </div>
                 </>
+              ) : (analysisResult && analysisResult.error) ? (
+                <div className="flex flex-col items-center justify-center h-full text-center p-6">
+                  <AlertTriangle size={48} className="text-red-500 mb-4" />
+                  <h4 className="text-lg font-bold text-gray-900 mb-2">Analysis Failed</h4>
+                  <p className="text-sm text-red-600 font-medium mb-4 leading-relaxed bg-red-50 p-4 rounded-2xl border border-red-100 italic">
+                    {analysisResult.summary}
+                  </p>
+                  {analysisResult.details && (
+                    <p className="text-[10px] text-gray-400 uppercase tracking-widest font-black mb-6">
+                      Details: {analysisResult.details}
+                    </p>
+                  )}
+                  <button 
+                    onClick={() => { setHasFile(false); setAnalysisResult(null); setDocumentText(""); }}
+                    className="bg-forest text-white px-8 py-3 rounded-full text-xs font-black uppercase tracking-widest shadow-xl shadow-forest/20 hover:scale-105 transition-all"
+                  >
+                    Try Another Document
+                  </button>
+                </div>
               ) : (
-                <div className="flex items-center justify-center h-full text-red-500 font-bold">
-                  {analysisResult?.summary || "Failed to analyze document"}
+                <div className="flex items-center justify-center h-full text-gray-400 font-medium">
+                  {analysisResult?.summary || "Ready for analysis"}
                 </div>
               )}
             </div>
