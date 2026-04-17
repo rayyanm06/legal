@@ -92,8 +92,7 @@ const AuthPage = ({ setIsLoggedIn, setUserEmail }) => {
         }
       }
     } catch (err) {
-      console.error('Auth error:', err);
-      setError("Connection failed. Please check your internet and try again.");
+      setError("Server connection failed. Is the backend on 5001?");
     } finally {
       setIsLoading(false);
     }
@@ -140,8 +139,8 @@ const AuthPage = ({ setIsLoggedIn, setUserEmail }) => {
         setError(data.error || "Google login failed sync to MongoDB.");
       }
     } catch (err) {
-      console.error('Google Auth Exception:', err);
-      setError("Google sign-in failed. Please try again or use email login.");
+      console.error("Auth Exception:", err);
+      setError("Sync failed. Check connection to backend on port 5000.");
     } finally {
       setIsLoading(false);
     }

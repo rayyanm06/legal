@@ -12,7 +12,6 @@ import mongoose from 'mongoose';
 import jwt from 'jsonwebtoken';
 import User from './models/User.js';
 import Lawyer from './models/Lawyer.js';
-import { PDFParse } from 'pdf-parse';
 
 // ─── ML PIPELINE — Case Strength Analyser ───────────────────────────────────
 import { searchCases } from './scrapers/indianKanoon.js';
@@ -21,21 +20,15 @@ import { predictOutcome } from './ml/outcomeModel.js';
 import scrapeJob from './jobs/scrapeJob.js';
 import reminderJob from './jobs/reminderJob.js';
 
-// Start background jobs only on traditional servers, not on Vercel serverless functions
-if (!process.env.VERCEL) {
-  console.log('🚀 Starting background jobs (Scraper & Reminders)');
-  scrapeJob.start();
-  reminderJob.start();
-} else {
-  console.log('☁️  Vercel environment detected: Background jobs disabled to prevent crashes.');
-}
+// Start background jobs
+scrapeJob.start();
+reminderJob.start();
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
 const app = express();
 app.use(cors());
-app.use(express.json({ limit: '10mb' }));
-app.use(express.urlencoded({ extended: true, limit: '10mb' }));
+app.use(express.json());
 
 const PORT = 5000;
 
@@ -88,24 +81,9 @@ function withTimeout(promise, ms = 12000, label = '') {
 
 // ─── MONGODB CONNECTION ───
 const MONGO_URI = process.env.MONGO_URI || 'mongodb://localhost:27017/nyai';
-if (!process.env.MONGO_URI) {
-  console.warn('⚠️  MONGO_URI not found in environment variables. Defaulting to local MongoDB.');
-} else {
-  console.log('🔗 MONGO_URI is configured. Attempting connection...');
-}
-
 mongoose.connect(MONGO_URI)
-  .then(() => {
-    console.log('✅ Connected to MongoDB via Mongoose');
-    console.log(`📡 DB Host: ${mongoose.connection.host}`);
-    console.log(`📂 DB Name: ${mongoose.connection.name}`);
-  })
-  .catch(err => {
-    console.error('❌ MongoDB Connection Error:', err.message);
-    if (err.message.includes('ECONNREFUSED')) {
-      console.error('👉 Tip: Ensure your MongoDB server is running or MONGO_URI is correct.');
-    }
-  });
+  .then(() => console.log('✅ Connected to MongoDB via Mongoose'))
+  .catch(err => console.error('❌ MongoDB Connection Error:', err));
 
 // ─── AUTH MIDDLEWARE ───
 const protect = async (req, res, next) => {
@@ -375,9 +353,7 @@ async function handleAIRequest(prompt, maxTokens = 1500) {
   const PROVIDERS = getProviders();
   let result = null;
   let engine = "None";
-  // For Vercel Hobby (10s limit), we must keep the individual provider timeout very short
-  const isVercel = !!process.env.VERCEL;
-  const TIMEOUT_MS = isVercel ? 8000 : 12000; 
+  const TIMEOUT_MS = 12000; // 12s hard timeout per provider
 
   // 1. FASTEST (PAID): Try OpenAI first — paid key, lowest latency
   if (!result && PROVIDERS.OPENAI.key) {
@@ -642,93 +618,58 @@ nyAI:`;
   }
 });
 
-// ── PDF/Doc text extractor (Using pdf-parse for high quality) ────────────────
-async function extractTextFromBuffer(buffer, fileName) {
-  try {
-    if (fileName && /\.pdf$/i.test(fileName)) {
-      const parser = new PDFParse({ data: buffer });
-      const data = await parser.getText();
-      if (data.text && data.text.trim().length > 50) {
-        return data.text.substring(0, 15000);
-      }
-    }
-    // Fallback for DOCX/TXT/Malformed PDF
-    const text = buffer.toString('utf8', 0, 15000);
-    // Basic cleanup: remove null chars or non-printable junk
-    return text.replace(/[^\x20-\x7E\n\r\t]/g, '').substring(0, 15000);
-  } catch (e) {
-    console.warn('Text extraction error:', e.message);
-    return buffer.toString('utf8', 0, 10000).replace(/[^\x20-\x7E\n\r\t]/g, '');
-  }
-}
-
 app.post('/api/analyze-document', async (req, res) => {
-  const { fileContent, fileName, fileType, documentText } = req.body;
-
-  // Support both new (fileContent base64) and legacy (documentText) callers
-  let text = documentText || '';
-  if (fileContent && !text) {
-    try {
-      const buf = Buffer.from(fileContent, 'base64');
-      text = await extractTextFromBuffer(buf, fileName || '');
-    } catch (e) {
-      return res.status(400).json({ error: 'Could not decode or extract text from uploaded file.' });
-    }
+  const { documentText } = req.body;
+  if (!documentText || documentText.trim().length === 0) {
+    return res.status(400).json({ error: "Document text is required." });
   }
 
-  if (!text || text.trim().length < 20) {
-    return res.status(400).json({ error: 'Could not extract enough text from the file. Try a plain .txt or .docx version.' });
-  }
+  const truncated = documentText.substring(0, 8000);
 
-  const truncated = text.substring(0, 8000);
-
-  const systemPrompt = `You are an expert Indian legal contract analyst with 20+ years of experience.
-You MUST identify ALL risks — even subtle ones. Never say "no risks found" for a real document.
-Your response MUST be ONLY a valid JSON object, no markdown, no extra text.`;
+  const systemPrompt = `You are an expert Indian legal contract analyst with 20+ years of experience. 
+You MUST analyze ANY document thoroughly and identify ALL risks — even subtle ones.
+Never say "no risks found" for a real document. Real documents always have issues.
+Your response must be ONLY a valid JSON object, no other text.`;
 
   const userPrompt = `Analyze this document thoroughly as an Indian legal expert. Find ALL risks, vague clauses, missing protections, and unfair terms.
 
-Document:
+Document Text:
 ---
 ${truncated}
 ---
 
-Return EXACTLY this JSON structure (no markdown wrapping):
+Return ONLY this JSON (no markdown, no extra text):
 {
-  "documentType": "Specific type e.g. Residential Rental Agreement 2024",
-  "partyA": "First party name or 'Party A'",
-  "partyB": "Second party name or 'Party B'",
-  "healthScore": <integer 0-100>,
-  "riskLevel": "<Low|Medium|High|Critical>",
-  "summary": "2-3 sentence assessment under Indian law.",
+  "documentType": "Identify the specific type (e.g., Residential Rental Agreement, Employment Offer Letter, NDA, Sale Deed, etc.)",
+  "partyA": "First party name extracted from document (or 'Party A' if unclear)",  
+  "partyB": "Second party name extracted from document (or 'Party B' if unclear)",
+  "healthScore": <integer 0-100 where 100=perfectly fair, 0=extremely unfair/dangerous>,
+  "riskLevel": "<one of: Low | Medium | High | Critical>",
+  "summary": "2-3 sentence overall assessment of the document's fairness and legal risks under Indian law.",
   "keyClauses": [
-    {"clause": "title", "text": "clause text or summary", "status": "<Fair|Vague|Unfair|Missing>"}
+    {"clause": "clause title", "text": "exact or paraphrased clause text", "status": "<Fair|Vague|Unfair|Missing>"}
   ],
   "riskFlags": [
-    {"type": "<Danger|Warning|Info>", "title": "short title", "desc": "specific issue and why it's risky under Indian law", "recommendation": "how to fix"}
+    {"type": "<Danger|Warning|Info>", "title": "short title", "desc": "specific explanation of what is wrong and why it's risky under Indian law", "recommendation": "what should be done to fix this"}
   ],
-  "missingClauses": ["important clause absent from this document type"],
-  "recommendations": ["Actionable recommendation 1", "Actionable recommendation 2"]
+  "missingClauses": ["List important clauses that SHOULD be in this document type but are absent"],
+  "recommendations": ["Top 3-5 specific actionable recommendations for the weaker party"]
 }
 
 RULES:
-- Always find at least 3 risk flags in any real document
-- Reference specific Indian laws (Indian Contract Act 1872, Transfer of Property Act, Consumer Protection Act 2019, etc.)
-- Flag vague monetary amounts, missing dates, unclear termination clauses
-- healthScore reflects fairness to the weaker party (0=very unfair, 100=perfectly balanced)`;
+- Always find at least 2-3 risk flags in any real document
+- Be specific about which section/clause is problematic
+- Reference actual Indian laws (Consumer Protection Act, Transfer of Property Act, Indian Contract Act, etc.) where applicable
+- For vague amounts like 'n 20,000' — flag it as a data error/ambiguity
+- healthScore should reflect the OVERALL fairness to the weaker party`;
 
   try {
     const PROVIDERS = getProviders();
     let parsedData = null;
-    let analysisStep = 'Initialization';
 
-    console.log(`[Doc Analyzer] Starting analysis for: ${fileName || 'unnamed'} (${text.length} chars)`);
-
-    // 1. Try OpenAI with JSON mode first
+    // Try OpenAI with JSON mode first (guaranteed valid JSON)
     if (PROVIDERS.OPENAI.key) {
-      analysisStep = 'OpenAI Analysis';
       try {
-        console.log('[Doc Analyzer] Attempting OpenAI...');
         const resp = await fetch(PROVIDERS.OPENAI.url, {
           method: "POST",
           headers: {
@@ -748,21 +689,16 @@ RULES:
         if (resp.ok) {
           const data = await resp.json();
           parsedData = JSON.parse(data.choices[0].message.content);
-          console.log("✅ Doc Analyzer: OpenAI Success");
-        } else {
-          const errBody = await resp.text().catch(() => 'No error body');
-          console.warn(`[Doc Analyzer] OpenAI Failed (${resp.status}): ${errBody}`);
+          console.log("✅ Document analysis via OpenAI JSON mode");
         }
       } catch (e) {
-        console.warn("[Doc Analyzer] OpenAI Exception:", e.message);
+        console.warn("OpenAI JSON mode failed for doc analysis:", e.message);
       }
     }
 
-    // 2. Fallback: Gemini with JSON mode
+    // Fallback: Gemini with JSON mode
     if (!parsedData && PROVIDERS.GEMINI.key) {
-      analysisStep = 'Gemini Analysis';
       try {
-        console.log('[Doc Analyzer] Attempting Gemini fallback...');
         const url = `${PROVIDERS.GEMINI.url}/${PROVIDERS.GEMINI.model}:generateContent?key=${PROVIDERS.GEMINI.key}`;
         const resp = await fetch(url, {
           method: "POST",
@@ -775,52 +711,40 @@ RULES:
         if (resp.ok) {
           const data = await resp.json();
           parsedData = JSON.parse(data.candidates[0].content.parts[0].text);
-          console.log("✅ Doc Analyzer: Gemini Success");
-        } else {
-          const errBody = await resp.text().catch(() => 'No error body');
-          console.warn(`[Doc Analyzer] Gemini Failed (${resp.status}): ${errBody}`);
+          console.log("✅ Document analysis via Gemini JSON mode");
         }
       } catch (e) {
-        console.warn("[Doc Analyzer] Gemini Exception:", e.message);
+        console.warn("Gemini JSON mode failed for doc analysis:", e.message);
       }
     }
 
-    // 3. Final fallback: generic dispatcher
+    // Final fallback: generic dispatcher
     if (!parsedData) {
-      analysisStep = 'Generic Fallback Analysis';
-      console.log('[Doc Analyzer] Attempting Generic Dispatcher...');
-      const { text: resultText } = await handleAIRequest(userPrompt, 2000);
+      const { text } = await handleAIRequest(userPrompt, 2000);
       try {
-        parsedData = JSON.parse(resultText.replace(/```json|```/g, '').trim());
+        parsedData = JSON.parse(text.replace(/```json|```/g, '').trim());
       } catch (e) {
-        const objMatch = resultText.match(/\{[\s\S]*\}/);
+        const objMatch = text.match(/\{[\s\S]*\}/);
         parsedData = objMatch ? JSON.parse(objMatch[0]) : null;
       }
-      if (parsedData) console.log("✅ Doc Analyzer: Generic Dispatcher Success");
     }
 
     if (!parsedData) {
-      analysisStep = 'Parsing Final Result';
-      console.error("[Doc Analyzer] All analysis providers failed.");
-      return res.status(500).json({ error: "All AI providers failed to return a valid analysis. Please try a simpler document or try again later." });
+      return res.status(500).json({ error: "Failed to parse AI analysis. Please try again." });
     }
 
     // Ensure required fields have defaults
-    parsedData.healthScore     = parsedData.healthScore     ?? 50;
-    parsedData.riskLevel       = parsedData.riskLevel       ?? 'Medium';
-    parsedData.riskFlags       = parsedData.riskFlags ?? [];
-    parsedData.keyClauses      = parsedData.keyClauses ?? [];
-    parsedData.missingClauses  = parsedData.missingClauses  ?? [];
+    parsedData.healthScore = parsedData.healthScore ?? 50;
+    parsedData.riskLevel = parsedData.riskLevel ?? "Medium";
+    parsedData.riskFlags = parsedData.riskFlags ?? [];
+    parsedData.keyClauses = parsedData.keyClauses ?? [];
+    parsedData.missingClauses = parsedData.missingClauses ?? [];
     parsedData.recommendations = parsedData.recommendations ?? [];
-    parsedData.extractedText   = truncated;
 
     res.json(parsedData);
   } catch (err) {
-    console.error(`[Doc Analyzer ERROR] at step ${analysisStep}:`, err);
-    res.status(500).json({ 
-      error: `Failed to analyze document at stage: ${analysisStep}.`,
-      details: err.message 
-    });
+    console.error("Document Analyzer Error:", err);
+    res.status(500).json({ error: "Failed to analyze document." });
   }
 });
 
