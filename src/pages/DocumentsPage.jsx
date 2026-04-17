@@ -9,65 +9,57 @@ import {
 } from 'lucide-react';
 import GavelLoading from '../components/GavelLoading';
 import { API_ENDPOINTS } from '../api/config';
-import pdfjsWorkerUrl from 'pdfjs-dist/build/pdf.worker.min.mjs?url';
-import axios from 'axios';
 // tesseract.js is now imported dynamically in the OCR block
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
 
-async function extractTextFromFile(file) {
-  const name = file.name.toLowerCase();
-
-  // PDF extraction via pdfjs-dist
-  if (name.endsWith('.pdf')) {
-    try {
-      const pdfjsLib = await import('pdfjs-dist');
-      pdfjsLib.GlobalWorkerOptions.workerSrc = pdfjsWorkerUrl;
-      const arrayBuffer = await file.arrayBuffer();
-      const pdf = await pdfjsLib.getDocument({ data: arrayBuffer }).promise;
-      let fullText = '';
-      
-      // Try digital text extraction first
-      for (let i = 1; i <= Math.min(pdf.numPages, 10); i++) {
-        const page = await pdf.getPage(i);
-        const content = await page.getTextContent();
-        fullText += content.items.map(it => it.str).join(' ') + '\n';
-      }
-
-      // OCR Fallback for scanned documents
-      if (fullText.trim().length < 50) {
-        console.log('📄 Low text detected, attempting OCR...');
-        const { createWorker } = await import('tesseract.js');
-        const worker = await createWorker('eng');
-        for (let i = 1; i <= Math.min(pdf.numPages, 3); i++) { // Limit OCR to 3 pages for speed
-          const page = await pdf.getPage(i);
-          const viewport = page.getViewport({ scale: 1.5 });
-          const canvas = document.createElement('canvas');
-          const context = canvas.getContext('2d');
-          canvas.height = viewport.height;
-          canvas.width = viewport.width;
-          await page.render({ canvasContext: context, viewport }).promise;
-          
-          const { data: { text } } = await worker.recognize(canvas);
-          fullText += text + '\n';
-        }
-        await worker.terminate();
-      }
-
-      return fullText.trim();
-    } catch (err) {
-      console.warn('PDF.js failed, falling back to text read:', err);
-    }
-  }
-
-  // Plain text / DOCX fallback (read as text)
+const extractText = (file) => {
   return new Promise((resolve, reject) => {
     const reader = new FileReader();
-    reader.onload = e => resolve(e.target.result);
-    reader.onerror = reject;
+    reader.onload = (e) => resolve(e.target.result);
+    reader.onerror = () => reject(new Error("Could not read file"));
     reader.readAsText(file);
   });
-}
+};
+
+const extractPDFText = async (file) => {
+  const arrayBuffer = await file.arrayBuffer();
+  const pdf = await window.pdfjsLib.getDocument({ data: arrayBuffer }).promise;
+  let fullText = '';
+  for (let i = 1; i <= pdf.numPages; i++) {
+    const page = await pdf.getPage(i);
+    const content = await page.getTextContent();
+    const pageText = content.items.map(item => item.str).join(' ');
+    fullText += pageText + '\n';
+  }
+  return fullText;
+};
+
+const extractDocxText = async (file) => {
+  const arrayBuffer = await file.arrayBuffer();
+  const result = await window.mammoth.extractRawText({ arrayBuffer });
+  return result.value;
+};
+
+const extractDocumentText = async (file) => {
+  const fileName = file.name.toLowerCase();
+  let text = '';
+  if (fileName.endsWith('.txt')) {
+    text = await extractText(file);
+  } else if (fileName.endsWith('.pdf')) {
+    text = await extractPDFText(file);
+  } else if (fileName.endsWith('.docx') || fileName.endsWith('.doc')) {
+    text = await extractDocxText(file);
+  } else {
+    throw new Error("⚠️ Please upload a .txt, .pdf, or .docx file");
+  }
+
+  if (!text || text.trim().length === 0) {
+    throw new Error("Could not read any text from this document. The file may be scanned/image-based or password protected.");
+  }
+  return text;
+};
+
 
 const riskColor = {
   Low:      { bg: 'bg-green-50',  text: 'text-green-700',  border: 'border-green-200',  dot: '#22c55e' },
@@ -101,55 +93,111 @@ const DocumentsPage = () => {
   const [previewMode, setPreviewMode] = useState('text'); // 'text' | 'analysis'
   const fileInputRef = useRef();
 
-  const processFile = useCallback(async (selectedFile) => {
+  const [warning, setWarning] = useState('');
+  const [positiveExpanded, setPositiveExpanded] = useState(false);
+  const [copied, setCopied] = useState(false);
+
+  const selectFile = (selectedFile) => {
     if (!selectedFile) return;
     setFile(selectedFile);
     setAnalysisResult(null);
     setError('');
+    setWarning('');
     setGeneratedResponse('');
+  };
+
+  const analyzeDocument = async () => {
+    if (!file) {
+      setError("Please upload a document first.");
+      return;
+    }
+
     setIsAnalyzing(true);
+    setError('');
+    setWarning('');
+    setAnalysisResult(null);
 
     try {
-      const text = await extractTextFromFile(selectedFile);
-      if (!text || text.trim().length < 30) {
-        throw new Error('Could not extract enough text from this file. Please try a different format.');
+      // Extract text from document
+      let documentText = await extractDocumentText(file);
+      
+      if (documentText.length > 12000) {
+        documentText = documentText.substring(0, 12000);
+        setWarning("⚠️ Document is large — analysing first section only.");
       }
-      setDocText(text);
 
-      // Call backend analyze endpoint
-      const resp = await fetch(API_ENDPOINTS.ANALYZE, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ documentText: text }),
+      setDocText(documentText);
+      
+      // Call OpenAI API
+      const response = await fetch("https://api.openai.com/v1/chat/completions", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "Authorization": `Bearer ${import.meta.env.VITE_OPENAI_API_KEY}`
+        },
+        body: JSON.stringify({
+          model: "gpt-4o-mini",
+          max_tokens: 2000,
+          messages: [
+            {
+              role: "system",
+              content: `You are an expert legal document analyst and risk assessment specialist. Your job is to analyse documents and identify risk flags, problematic clauses, and areas of concern.\n\nAlways respond with ONLY a valid JSON object.\nNo explanation before or after. No markdown. No backticks.\nStart your response with { and end with }`
+            },
+            {
+              role: "user",
+              content: `Analyse this document and identify all risk flags, problematic clauses, and areas of concern.\n\nDocument content:\n"""\n${documentText}\n"""\n\nRespond with ONLY this JSON structure:\n{\n  "documentType": "what type of document this is",\n  "overallRiskLevel": "Low" or "Medium" or "High" or "Critical",\n  "summary": "2-3 sentence plain English summary of what this document is",\n  "riskFlags": [\n    {\n      "id": 1,\n      "severity": "Low" or "Medium" or "High" or "Critical",\n      "category": "category of risk e.g. Financial, Legal, Privacy, Liability",\n      "title": "short title of the risk",\n      "description": "2-3 sentences explaining what the risk is",\n      "exactText": "the exact clause or sentence from the document that triggers this flag, or null if not applicable",\n      "recommendation": "what the user should do about this risk"\n    }\n  ],\n  "positiveFindings": [\n    "one sentence for each thing that looks good or fair in the document"\n  ],\n  "totalRisksFound": number,\n  "criticalCount": number,\n  "highCount": number,\n  "mediumCount": number,\n  "lowCount": number\n}\n\nFlag everything that could harm the user including:\n- Unfair penalty clauses\n- Hidden fees or auto-renewals\n- Unreasonable liability waivers\n- Vague or one-sided termination clauses\n- Data privacy or sharing concerns\n- Missing standard protections\n- Ambiguous language that favours one party\n- Jurisdiction clauses that are problematic\n\nIf the document has no serious risks, still list minor ones.\nAlways find at least something to flag — no document is perfect.`
+            }
+          ]
+        })
       });
 
-      if (!resp.ok) {
-        const errData = await resp.json().catch(() => ({}));
-        throw new Error(errData.error || `Server error ${resp.status}`);
+      if (!response.ok) {
+        const errData = await response.json();
+        throw new Error(errData.error?.message || "OpenAI API call failed");
       }
 
-      const data = await resp.json();
-      setAnalysisResult(data);
+      const data = await response.json();
+      const rawText = data.choices[0].message.content.trim();
+      
+      // Robust JSON parsing
+      let cleanText = rawText.replace(/^```json\s*/i, '').replace(/\s*```$/,'').trim();
+      const jsonStart = cleanText.indexOf('{');
+      const jsonEnd = cleanText.lastIndexOf('}');
+      if (jsonStart === -1 || jsonEnd === -1) {
+        throw new Error("AI returned invalid response format");
+      }
+      cleanText = cleanText.substring(jsonStart, jsonEnd + 1);
+      
+      const result = JSON.parse(cleanText);
+      setAnalysisResult(result);
       setPreviewMode('analysis');
+
     } catch (err) {
-      console.error('Analysis error:', err);
-      setError(err.message || 'Analysis failed. Please try again.');
+      console.error("Document analysis error:", err);
+      if (err.message.includes("API key")) {
+        setError("API key error. Please check your OpenAI API key configuration.");
+      } else if (err.message.includes("quota")) {
+        setError("OpenAI quota exceeded. Please check your API usage.");
+      } else {
+        setError(`Analysis failed: ${err.message}. Please try again.`);
+      }
     } finally {
       setIsAnalyzing(false);
     }
-  }, []);
+  };
 
   const handleDrop = useCallback((e) => {
     e.preventDefault();
     setDragOver(false);
     const dropped = e.dataTransfer.files[0];
-    if (dropped) processFile(dropped);
-  }, [processFile]);
+    if (dropped) selectFile(dropped);
+  }, []);
 
   const handleFileInput = (e) => {
     const selected = e.target.files[0];
-    if (selected) processFile(selected);
+    if (selected) selectFile(selected);
   };
+
 
   const handleGenerateResponse = async () => {
     if (!docText || !analysisResult) return;
@@ -227,7 +275,7 @@ const DocumentsPage = () => {
               className="grid grid-cols-1 lg:grid-cols-5 gap-8"
             >
               {/* LEFT: Upload + Preview */}
-              <div className="lg:col-span-3 flex flex-col gap-6">
+              <div className={`flex flex-col gap-6 ${file ? 'lg:col-span-5' : 'lg:col-span-3'}`}>
 
                 {/* Upload Zone */}
                 {!file ? (
@@ -268,7 +316,7 @@ const DocumentsPage = () => {
                     </div>
                   </div>
                 ) : (
-                  /* Document Preview Panel */
+                  /* unified Results Panel */
                   <div className="bg-white rounded-[2rem] border border-gray-100 shadow-xl overflow-hidden flex flex-col" style={{ minHeight: 480 }}>
                     {/* File Header */}
                     <div className="bg-gray-50 border-b border-gray-100 px-6 py-4 flex items-center justify-between">
@@ -282,273 +330,205 @@ const DocumentsPage = () => {
                         </div>
                       </div>
                       <div className="flex items-center gap-2">
-                        {analysisResult && (
-                          <div className="flex bg-gray-100 rounded-xl p-1 gap-1">
-                            <button
-                              onClick={() => setPreviewMode('text')}
-                              className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all ${previewMode === 'text' ? 'bg-white shadow text-forest' : 'text-gray-400'}`}
-                            >
-                              Raw Text
-                            </button>
-                            <button
-                              onClick={() => setPreviewMode('analysis')}
-                              className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all ${previewMode === 'analysis' ? 'bg-white shadow text-forest' : 'text-gray-400'}`}
-                            >
-                              Analysis View
-                            </button>
-                          </div>
+                        {!analysisResult && !isAnalyzing && (
+                          <button
+                            onClick={analyzeDocument}
+                            className="px-6 py-2 bg-forest text-lime font-black rounded-xl hover:bg-opacity-90 transition-all flex items-center gap-2"
+                          >
+                            <Sparkles size={16} /> Analyse
+                          </button>
                         )}
-                        <button
-                          onClick={reset}
-                          className="p-2 border border-gray-200 rounded-xl text-gray-400 hover:text-red-500 hover:border-red-200 transition-all"
-                          title="Remove document"
-                        >
+                        <button onClick={() => selectFile(null)} className="p-2 border border-gray-200 rounded-xl text-gray-400 hover:text-red-500 hover:border-red-200 transition-all">
                           <Trash2 size={16} />
                         </button>
                       </div>
                     </div>
-
-                    {/* Content Area */}
-                    {isAnalyzing ? (
-                      <div className="flex-1 flex items-center justify-center p-12">
-                        <GavelLoading
-                          size="large"
-                          text="Analyzing Document"
-                          subtext="Scanning all clauses with Indian legal expertise..."
-                        />
-                      </div>
-                    ) : error ? (
-                      <div className="flex-1 flex items-center justify-center p-12">
-                        <div className="text-center">
-                          <AlertCircle size={48} className="text-red-400 mx-auto mb-4" />
-                          <h3 className="text-lg font-bold text-gray-700 mb-2">Analysis Failed</h3>
-                          <p className="text-sm text-gray-500 mb-6 max-w-sm">{error}</p>
-                          <button
-                            onClick={reset}
-                            className="px-6 py-3 bg-forest text-lime rounded-xl font-bold text-sm"
-                          >
-                            Try Again
-                          </button>
-                        </div>
-                      </div>
-                    ) : previewMode === 'text' ? (
-                      /* Raw text preview */
-                      <div className="flex-1 overflow-y-auto p-6" style={{ maxHeight: 500 }}>
-                        <div className="font-mono text-xs text-gray-600 leading-relaxed whitespace-pre-wrap bg-gray-50 rounded-xl p-4 border border-gray-100">
-                          {docText || 'No text extracted.'}
-                        </div>
-                      </div>
-                    ) : (
-                      /* Analysis view — annotated clauses */
-                      <div className="flex-1 overflow-y-auto p-6 space-y-4" style={{ maxHeight: 500 }}>
-                        {/* Doc type badge */}
-                        <div className="flex items-center gap-3 mb-2">
-                          <span className="px-3 py-1 bg-forest text-lime text-xs font-black rounded-full uppercase tracking-widest">
-                            {analysisResult?.documentType}
-                          </span>
-                          {analysisResult?.partyA && (
-                            <span className="text-xs text-gray-500">
-                              {analysisResult.partyA} ↔ {analysisResult.partyB}
-                            </span>
-                          )}
-                        </div>
-
-                        {/* Key Clauses with status */}
-                        {(analysisResult?.keyClauses || []).map((kc, i) => {
-                          const clause = typeof kc === 'string' ? { clause: 'Clause', text: kc, status: 'Info' } : kc;
-                          const color = clauseStatusColor[clause?.status] || 'bg-gray-100 text-gray-500';
-                          return (
-                            <div key={i} className="bg-white border border-gray-100 rounded-2xl p-4 shadow-sm hover:shadow-md transition-all">
-                              <div className="flex items-center justify-between mb-2">
-                                <h4 className="text-sm font-bold text-gray-800">{clause?.clause || 'Clause'}</h4>
-                                <span className={`text-[10px] font-black px-2 py-0.5 rounded-full uppercase tracking-wider ${color}`}>
-                                  {clause?.status || 'Info'}
-                                </span>
-                              </div>
-                              <p className="text-xs text-gray-500 leading-relaxed">{clause?.text}</p>
+                    
+                    <div className="flex-1 p-6 overflow-y-auto">
+                      {isAnalyzing ? (
+                        <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', padding: '40px' }}>
+                          <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', width: '100%', maxWidth: '300px' }}>
+                            <div style={{ width: '40px', height: '40px', borderRadius: '50%', border: '3px solid #f3f4f6', borderTopColor: '#22c55e', animation: 'spin 1s linear infinite', marginBottom: '20px' }} />
+                            <h3 style={{ fontSize: '18px', fontWeight: 'bold', color: '#111827', marginBottom: '8px' }}>Analysing Document...</h3>
+                            <p style={{ fontSize: '14px', color: '#6b7280', textAlign: 'center', marginBottom: '20px' }}>Scanning for risks, loopholes, and missing protections.</p>
+                            <div style={{ width: '100%', height: '6px', backgroundColor: '#f3f4f6', borderRadius: '3px', overflow: 'hidden' }}>
+                              <div style={{ width: '50%', height: '100%', background: 'linear-gradient(90deg, #22c55e 0%, #16a34a 100%)', borderRadius: '3px', animation: 'pulse 2s cubic-bezier(0.4, 0, 0.6, 1) infinite' }} />
                             </div>
-                          );
-                        })}
-
-                        {/* Missing Clauses */}
-                        {analysisResult?.missingClauses?.length > 0 && (
-                          <div className="bg-amber-50 border border-amber-200 rounded-2xl p-4">
-                            <h4 className="text-sm font-bold text-amber-800 mb-2 flex items-center gap-2">
-                              <AlertCircle size={16} /> Missing Clauses
-                            </h4>
-                            <ul className="space-y-1">
-                              {(analysisResult.missingClauses || []).map((mc, i) => (
-                                <li key={i} className="text-xs text-amber-700 flex items-start gap-2">
-                                  <span className="mt-0.5">•</span> {mc}
-                                </li>
-                              ))}
-                            </ul>
                           </div>
-                        )}
-                      </div>
-                    )}
+                          <style>
+                            {`
+                              @keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
+                              @keyframes pulse { 0%, 100% { opacity: 1; transform: translateX(-100%); } 50% { opacity: .5; transform: translateX(200%); } }
+                            `}
+                          </style>
+                        </div>
+                      ) : error ? (
+                        <div style={{ padding: '20px', backgroundColor: '#fef2f2', border: '1px solid #fca5a5', borderRadius: '12px', display: 'flex', alignItems: 'flex-start', gap: '12px', marginBottom: '20px' }}>
+                          <div style={{ padding: '4px', backgroundColor: '#fee2e2', borderRadius: '8px' }}>
+                            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#ef4444" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
+                          </div>
+                          <div style={{ flex: 1 }}>
+                            <h3 style={{ fontSize: '14px', fontWeight: 'bold', color: '#991b1b', margin: '0 0 4px 0' }}>Analysis Failed</h3>
+                            <p style={{ fontSize: '14px', color: '#b91c1c', margin: 0, lineHeight: 1.5 }}>{error}</p>
+                          </div>
+                        </div>
+                      ) : analysisResult ? (
+                        <div className="space-y-6">
+                            {warning && (
+                              <div style={{ padding: '12px 16px', backgroundColor: '#fffbeb', border: '1px solid #fde68a', borderRadius: '8px', color: '#92400e', fontSize: '14px', fontWeight: '500', display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '24px' }}>
+                                <span>⚠️</span> {warning}
+                              </div>
+                            )}
+
+                            {/* Summary Bar */}
+                            <div className="flex flex-wrap gap-4">
+                              <div className="flex-1 bg-red-50 border border-red-100 rounded-xl p-4 flex flex-col items-center">
+                                <span className="text-2xl font-black text-red-600">{analysisResult.criticalCount || 0}</span>
+                                <span className="text-[10px] font-black uppercase tracking-widest text-red-500 mt-1">Critical</span>
+                              </div>
+                              <div className="flex-1 bg-orange-50 border border-orange-100 rounded-xl p-4 flex flex-col items-center">
+                                <span className="text-2xl font-black text-orange-600">{analysisResult.highCount || 0}</span>
+                                <span className="text-[10px] font-black uppercase tracking-widest text-orange-500 mt-1">High Risk</span>
+                              </div>
+                              <div className="flex-1 bg-amber-50 border border-amber-100 rounded-xl p-4 flex flex-col items-center">
+                                <span className="text-2xl font-black text-amber-600">{analysisResult.mediumCount || 0}</span>
+                                <span className="text-[10px] font-black uppercase tracking-widest text-amber-500 mt-1">Medium Risk</span>
+                              </div>
+                              <div className="flex-1 bg-green-50 border border-green-100 rounded-xl p-4 flex flex-col items-center">
+                                <span className="text-2xl font-black text-green-600">{analysisResult.lowCount || 0}</span>
+                                <span className="text-[10px] font-black uppercase tracking-widest text-green-500 mt-1">Low Risk</span>
+                              </div>
+                            </div>
+                            
+                            {/* Risk Flags */}
+                            {analysisResult.riskFlags && analysisResult.riskFlags.length > 0 ? (
+                              <div className="space-y-4 mt-6">
+                                <h3 className="text-lg font-black text-gray-900 flex items-center gap-2">
+                                  <AlertTriangle size={20} className="text-orange-500"/> Detected Risks ({analysisResult.riskFlags.length})
+                                </h3>
+                                {analysisResult.riskFlags.map((flag, idx) => (
+                                  <div key={idx} className={`bg-white rounded-2xl p-5 border shadow-sm ${
+                                    flag.severity === 'Critical' ? 'border-red-300' :
+                                    flag.severity === 'High' ? 'border-orange-300' :
+                                    flag.severity === 'Medium' ? 'border-amber-300' : 'border-blue-200'
+                                  }`}>
+                                    <div className="flex justify-between items-start mb-3">
+                                      <h4 className="font-bold text-gray-900 text-lg">{flag.title}</h4>
+                                      <span className={`px-3 py-1 text-[10px] font-black uppercase tracking-widest rounded-full ${
+                                        flag.severity === 'Critical' ? 'bg-red-100 text-red-700' :
+                                        flag.severity === 'High' ? 'bg-orange-100 text-orange-700' :
+                                        flag.severity === 'Medium' ? 'bg-amber-100 text-amber-700' : 'bg-blue-100 text-blue-700'
+                                      }`}>
+                                        {flag.severity} RISK
+                                      </span>
+                                    </div>
+                                    <p className="text-sm text-gray-600 leading-relaxed mb-4">{flag.description}</p>
+                                    
+                                    {flag.exactText && flag.exactText !== "null" && (
+                                      <div className="bg-[#fef9c3] border-l-4 border-amber-400 p-4 rounded-r-lg mb-4 text-xs font-mono text-gray-700 shadow-sm">
+                                        <p className="text-[10px] font-bold text-amber-800 uppercase tracking-widest mb-2 shadow-none">📄 From your document:</p>
+                                        "{flag.exactText}"
+                                      </div>
+                                    )}
+
+                                    {flag.recommendation && (
+                                      <div className="bg-[#f0fdf4] border border-green-200 p-4 rounded-lg text-sm text-green-800 flex items-start gap-3 shadow-sm">
+                                        <Sparkles size={16} className="text-green-600 flex-shrink-0 mt-0.5" />
+                                        <div>
+                                          <p className="text-[10px] font-black uppercase tracking-widest text-green-600 mb-1">💡 What to do:</p>
+                                          {flag.recommendation}
+                                        </div>
+                                      </div>
+                                    )}
+                                  </div>
+                                ))}
+                              </div>
+                            ) : (
+                              <div className="bg-green-50 border border-green-100 rounded-2xl p-6 text-center mt-6">
+                                <CheckCircle2 size={32} className="text-green-500 mx-auto mb-3" />
+                                <h3 className="text-lg font-bold text-green-800">No Risk Flags Detected</h3>
+                                <p className="text-sm text-green-600 mt-1">This document looks exceptionally clean and fair.</p>
+                              </div>
+                            )}
+
+                            {/* Positive Findings */}
+                            {analysisResult.positiveFindings && analysisResult.positiveFindings.length > 0 && (
+                              <div className="mt-8 border border-gray-200 rounded-2xl overflow-hidden">
+                                <button 
+                                  onClick={() => setPositiveExpanded(!positiveExpanded)}
+                                  className="w-full bg-gray-50 p-4 flex items-center justify-between hover:bg-gray-100 transition-colors"
+                                >
+                                  <span className="font-bold text-gray-800 flex items-center gap-2">
+                                    <CheckCircle2 size={18} className="text-green-500" /> 
+                                    ✅ What looks good ({analysisResult.positiveFindings.length})
+                                  </span>
+                                  <ChevronRight size={18} className={`text-gray-400 transition-transform duration-300 ${positiveExpanded ? 'rotate-90' : ''}`} />
+                                </button>
+                                {positiveExpanded && (
+                                  <div className="p-5 bg-white border-t border-gray-200">
+                                    <ul className="space-y-4 px-2">
+                                      {analysisResult.positiveFindings.map((finding, idx) => (
+                                        <li key={idx} className="flex items-start gap-3 text-sm text-gray-600 leading-relaxed font-medium">
+                                          <CheckCircle2 size={16} className="text-green-500 flex-shrink-0 mt-0.5" />
+                                          {finding}
+                                        </li>
+                                      ))}
+                                    </ul>
+                                  </div>
+                                )}
+                              </div>
+                            )}
+
+                            {/* Action Buttons */}
+                            <div className="flex gap-4 mt-8 pt-8 border-t border-gray-100">
+                              <button 
+                                onClick={() => selectFile(null)}
+                                className="flex-1 py-4 border-2 border-gray-200 rounded-xl font-bold text-gray-500 hover:text-gray-800 hover:border-gray-400 transition-all flex items-center justify-center gap-2"
+                              >
+                                <ArrowRight size={18} className="rotate-180" /> Analyse Another Document
+                              </button>
+                              <button 
+                                onClick={() => {
+                                  if (analysisResult) {
+                                    navigator.clipboard.writeText(JSON.stringify(analysisResult, null, 2));
+                                    setCopied(true);
+                                    setTimeout(() => setCopied(false), 2000);
+                                  }
+                                }}
+                                className="flex-1 py-4 bg-forest text-lime font-black rounded-xl hover:bg-opacity-90 shadow-lg shadow-forest/20 transition-all flex items-center justify-center gap-2"
+                              >
+                                <ClipboardList size={18} /> {copied ? '✓ Copied!' : '📋 Copy Summary'}
+                              </button>
+                            </div>
+                        </div>
+                      ) : (
+                        <div className="flex flex-col items-center justify-center h-full text-center p-8">
+                           <FileText size={48} className="text-gray-200 mb-4" />
+                           <h3 className="text-lg font-bold text-gray-700">Document Ready</h3>
+                           <p className="text-sm text-gray-500 max-w-sm mt-2">
+                             Click the Analyse button in the top right to start the AI risk assessment.
+                           </p>
+                        </div>
+                      )}
+                    </div>
                   </div>
                 )}
               </div>
 
               {/* RIGHT: Analysis Results Panel */}
+              {!file && (
               <div className="lg:col-span-2 space-y-6">
-
                 {/* Health Score Card */}
                 <div className="bg-forest rounded-[2rem] p-8 text-white relative overflow-hidden">
                   <div className="absolute inset-0 opacity-5" style={{ backgroundImage: 'url(/noise.png)' }} />
                   <h4 className="text-[10px] font-black uppercase tracking-widest text-white/40 mb-6">
                     Document Intelligence
                   </h4>
-
-                  {!analysisResult && !isAnalyzing ? (
-                    <div className="text-center py-4">
-                      <FileCheck size={40} className="text-white/20 mx-auto mb-4" />
-                      <p className="text-white/40 text-sm">Upload a document to see AI analysis</p>
-                    </div>
-                  ) : isAnalyzing ? (
-                    <div className="flex justify-center py-4">
-                      <GavelLoading size="small" text="Analyzing..." />
-                    </div>
-                  ) : (
-                    <>
-                      {/* Score Ring */}
-                      <div className="flex flex-col items-center mb-6">
-                        <div className="relative w-36 h-36 flex items-center justify-center mb-4">
-                          <svg className="w-full h-full -rotate-90">
-                            <circle cx="72" cy="72" r="64" stroke="white" strokeOpacity="0.1" strokeWidth="8" fill="none" />
-                            <motion.circle
-                              cx="72" cy="72" r="64"
-                              stroke={rc.dot}
-                              strokeWidth="10"
-                              fill="none"
-                              strokeDasharray="402"
-                              initial={{ strokeDashoffset: 402 }}
-                              animate={{ strokeDashoffset: 402 - (402 * score / 100) }}
-                              transition={{ duration: 1.4, ease: 'easeOut' }}
-                              strokeLinecap="round"
-                            />
-                          </svg>
-                          <div className="absolute inset-0 flex flex-col items-center justify-center">
-                            <span className="text-4xl font-black text-white">{score}</span>
-                            <span className="text-[10px] text-white/40 font-black uppercase tracking-widest">/100</span>
-                          </div>
-                        </div>
-                        <span className={`px-4 py-1.5 rounded-full text-xs font-black uppercase tracking-widest ${rc.bg} ${rc.text}`}>
-                          {riskLevel} Risk
-                        </span>
-                      </div>
-                      <p className="text-white/60 text-sm text-center leading-relaxed italic">
-                        {analysisResult?.summary}
-                      </p>
-                    </>
-                  )}
+                  <div className="text-center py-4">
+                    <FileCheck size={40} className="text-white/20 mx-auto mb-4" />
+                    <p className="text-white/40 text-sm">Upload a document to see AI analysis</p>
+                  </div>
                 </div>
-
-                    {/* Risk Flags */}
-                    {(analysisResult?.riskFlags || []).length > 0 && (
-                      <div className="space-y-3">
-                        <h4 className="text-[10px] font-black text-gray-400 uppercase tracking-widest px-1">
-                          Risk Flags Detected ({(analysisResult?.riskFlags || []).length})
-                        </h4>
-                        {(analysisResult?.riskFlags || []).map((flag, i) => {
-                          const Icon = flagIcon[flag?.type] || Info || AlertCircle;
-                          const color = (flagColor && flagColor[flag?.type]) || (flagColor && flagColor.Info) || 'text-blue-500 bg-blue-50';
-                          return (
-                            <div key={i} className="bg-white border border-gray-100 rounded-2xl p-4 shadow-sm hover:shadow-md transition-all cursor-pointer">
-                              <div className="flex gap-3">
-                                <div className={`w-9 h-9 rounded-xl flex items-center justify-center flex-shrink-0 ${color}`}>
-                                  <Icon size={18} />
-                                </div>
-                                <div className="flex-1 min-w-0">
-                                  <div className="flex items-center gap-2 mb-1">
-                                    <h5 className="text-sm font-bold text-gray-900 truncate">
-                                      {flag?.title || "Legal Risk"}
-                                    </h5>
-                                    <span className={`text-[8px] font-black px-1.5 py-0.5 rounded uppercase flex-shrink-0 ${
-                                      flag?.type === 'Danger' ? 'bg-red-500 text-white' :
-                                      flag?.type === 'Warning' ? 'bg-amber-400 text-white' :
-                                      'bg-blue-100 text-blue-700'
-                                    }`}>{flag?.type || 'Info'}</span>
-                                  </div>
-                                  <p className="text-xs text-gray-500 leading-relaxed">{flag?.desc || 'Potential concern identified.'}</p>
-                              {flag.recommendation && (
-                                <p className="text-xs text-forest font-semibold mt-1.5 flex items-start gap-1">
-                                  <ChevronRight size={12} className="mt-0.5 flex-shrink-0" />
-                                  {flag.recommendation}
-                                </p>
-                              )}
-                            </div>
-                          </div>
-                        </div>
-                      );
-                    })}
-                  </div>
-                )}
-
-                {/* No flags fallback */}
-                {analysisResult && analysisResult.riskFlags?.length === 0 && (
-                  <div className="bg-green-50 border border-green-100 rounded-2xl p-4 text-center">
-                    <CheckCircle2 size={24} className="text-green-500 mx-auto mb-2" />
-                    <p className="text-sm text-green-700 font-semibold">No major risk flags detected</p>
-                    <p className="text-xs text-green-600 mt-1">This document appears relatively fair.</p>
-                  </div>
-                )}
-
-                {/* Recommendations */}
-                {analysisResult?.recommendations?.length > 0 && (
-                  <div className="bg-white border border-gray-100 rounded-2xl p-5 shadow-sm">
-                    <h4 className="text-sm font-black text-gray-900 mb-3 flex items-center gap-2">
-                      <Sparkles size={16} className="text-lime" /> AI Recommendations
-                    </h4>
-                    <ul className="space-y-2">
-                      {analysisResult.recommendations.map((r, i) => (
-                        <li key={i} className="text-xs text-gray-600 flex items-start gap-2 leading-relaxed">
-                          <span className="w-5 h-5 rounded-full bg-lime/20 text-forest font-black text-[10px] flex items-center justify-center flex-shrink-0 mt-0.5">{i + 1}</span>
-                          {r}
-                        </li>
-                      ))}
-                    </ul>
-                  </div>
-                )}
-
-                {/* Generate Legal Response Button */}
-                {analysisResult && (
-                  <div className="space-y-4">
-                    <button
-                      onClick={handleGenerateResponse}
-                      disabled={generating}
-                      className="w-full bg-lime text-forest font-black py-5 rounded-2xl shadow-xl shadow-lime/10 hover:bg-lime-hover transition-all flex items-center justify-center gap-3 disabled:opacity-60"
-                    >
-                      {generating ? 'Drafting Response...' : 'Generate Legal Response'} <Sparkles size={18} />
-                    </button>
-
-                    {generating && (
-                      <div className="flex justify-center py-4">
-                        <GavelLoading size="small" text="Drafting your legal response..." />
-                      </div>
-                    )}
-
-                    {generatedResponse && (
-                      <div className="bg-white border border-gray-100 rounded-2xl p-5 shadow-sm">
-                        <h4 className="text-sm font-black text-gray-900 mb-3">📄 Generated Legal Response</h4>
-                        <div className="text-xs text-gray-600 whitespace-pre-wrap leading-relaxed font-mono bg-gray-50 p-4 rounded-xl max-h-64 overflow-y-auto">
-                          {generatedResponse}
-                        </div>
-                        <button
-                          onClick={() => {
-                            const blob = new Blob([generatedResponse], { type: 'text/plain' });
-                            const url = URL.createObjectURL(blob);
-                            const a = document.createElement('a');
-                            a.href = url; a.download = 'legal_response.txt'; a.click();
-                          }}
-                          className="mt-3 w-full py-3 border border-gray-200 rounded-xl text-xs font-black text-gray-500 hover:text-forest hover:border-forest transition-all flex items-center justify-center gap-2"
-                        >
-                          <Download size={14} /> Download as TXT
-                        </button>
-                      </div>
-                    )}
-                  </div>
                 )}
               </div>
             </motion.div>
