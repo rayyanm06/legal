@@ -3,9 +3,10 @@
 
 import React, { useState, useEffect } from 'react';
 import QuestionCard from './QuestionCard';
-import { askClaude, parseJSONResponse } from '../utils/aiService';
+// askClaude not used for quiz generation (now uses dedicated backend endpoint)
 import GavelLoading from '../../../components/GavelLoading';
 import { API_ENDPOINTS } from '../../../api/config';
+
 
 const css = `
   @keyframes lexFadeIn { from{opacity:0;transform:translateY(16px)} to{opacity:1;transform:translateY(0)} }
@@ -76,55 +77,31 @@ export default function QuizEngine({ userEmail, onGoDashboard }) {
 
     setView('loading');
     try {
-      const topicsList = selectedTopics.join(', ');
-      
-      const prompt = `You are a legal education quiz creator for India.
-  
-Create ${questionCount} quiz questions for a ${difficulty} level student.
-Topics to cover: ${topicsList}
+      // Use dedicated backend endpoint with OpenAI JSON mode for reliable JSON
+      const resp = await fetch(API_ENDPOINTS.GENERATE_QUIZ, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          topics: selectedTopics,
+          difficulty,
+          count: questionCount
+        })
+      });
 
-Distribute questions evenly across the selected topics.
-Each question must be a real-world scenario set in India that a 
-young adult aged 18-28 would actually face.
-
-Respond ONLY with a valid JSON array. No explanation, no markdown, 
-no backticks. Raw JSON only.
-CRITICAL: Do NOT use ANY markdown formatting (like **bold** or *italic*) around the JSON keys or values. Strict JSON syntax only.
-
-[
-  {
-    "id": 1,
-    "category": "topic name",
-    "situation": "2-3 sentence real scenario in India",
-    "question": "What should you do?",
-    "options": ["A. option one", "B. option two", "C. option three", "D. option four"],
-    "correctOption": "B",
-    "explanation": "2-3 sentence plain English explanation",
-    "difficulty": "${difficulty}"
-  }
-]
-
-Make each scenario genuinely different. 
-Do NOT repeat situations across questions.`;
-
-      const response = await askClaude(prompt, 2000);
-      let generatedQuestions = parseJSONResponse(response);
-      
-      // Some LLMs return an object like { questions: [...] } instead of a raw array
-      if (generatedQuestions && !Array.isArray(generatedQuestions)) {
-        const potentialArray = Object.values(generatedQuestions).find(v => Array.isArray(v));
-        if (potentialArray) {
-          generatedQuestions = potentialArray;
-        } else {
-          generatedQuestions = [generatedQuestions]; // Wrap single object in array
-        }
+      if (!resp.ok) {
+        const errData = await resp.json().catch(() => ({}));
+        throw new Error(errData.error || `Server error ${resp.status}`);
       }
 
-      if (!generatedQuestions || !Array.isArray(generatedQuestions) || generatedQuestions.length === 0 || !generatedQuestions[0].options) {
-        throw new Error("AI returned malformed or empty questions.");
+      const data = await resp.json();
+      const questions = data.questions;
+
+      if (!questions || !Array.isArray(questions) || questions.length === 0 || !questions[0].options) {
+        throw new Error("AI returned malformed questions.");
       }
-      
-      setScenarios(generatedQuestions);
+
+      console.log(`✅ Quiz loaded via ${data.engine} (${questions.length} questions)`);
+      setScenarios(questions);
       setCurrentIdx(0);
       setScore(0);
       setHasAnswered(false);

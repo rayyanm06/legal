@@ -445,6 +445,115 @@ app.post('/ai/ask', async (req, res) => {
   }
 });
 
+// ─── DEDICATED QUIZ GENERATION ENDPOINT ─── More reliable than /ai/ask for JSON
+app.post('/api/generate-quiz', async (req, res) => {
+  const { topics, difficulty, count } = req.body;
+  if (!topics || !topics.length) {
+    return res.status(400).json({ error: "Topics are required." });
+  }
+
+  const safeCount = Math.min(count || 3, 5); // Cap at 5 to stay within token limits
+  const topicsList = topics.join(', ');
+
+  const systemPrompt = `You are a legal education quiz creator for India. You MUST respond with ONLY a valid JSON array, no other text before or after.`;
+  
+  const userPrompt = `Create exactly ${safeCount} quiz questions for a ${difficulty || 'Beginner'} level student about: ${topicsList}.
+Each question must be a real-world scenario for a young Indian adult aged 18-28.
+
+Return ONLY this JSON array (no markdown, no explanation, just raw JSON):
+[{"id":1,"category":"topic name","situation":"2-3 sentence scenario","question":"What should you do?","options":["A. option","B. option","C. option","D. option"],"correctOption":"B","explanation":"2-3 sentence explanation","difficulty":"${difficulty || 'Beginner'}"}]`;
+
+  try {
+    const PROVIDERS = getProviders();
+
+    // Try OpenAI with JSON mode first (guaranteed valid JSON)
+    if (PROVIDERS.OPENAI.key) {
+      try {
+        const resp = await fetch(PROVIDERS.OPENAI.url, {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            "Authorization": `Bearer ${PROVIDERS.OPENAI.key}`
+          },
+          body: JSON.stringify({
+            model: PROVIDERS.OPENAI.model,
+            messages: [
+              { role: "system", content: systemPrompt },
+              { role: "user", content: userPrompt }
+            ],
+            max_tokens: 2000,
+            response_format: { type: "json_object" }
+          })
+        });
+
+        if (resp.ok) {
+          const data = await resp.json();
+          const raw = data.choices[0].message.content;
+          // JSON mode returns an object — extract the array from it
+          const parsed = JSON.parse(raw);
+          const questions = Array.isArray(parsed) ? parsed : Object.values(parsed).find(v => Array.isArray(v)) || [];
+          if (questions.length > 0 && questions[0].options) {
+            console.log(`✅ Quiz via OpenAI JSON mode (${questions.length} questions)`);
+            return res.json({ questions, engine: "OpenAI (GPT-4o-mini)" });
+          }
+        }
+      } catch (e) {
+        console.warn("OpenAI JSON mode failed:", e.message);
+      }
+    }
+
+    // Fallback: Try Gemini (fast and reliable with JSON)
+    if (PROVIDERS.GEMINI.key) {
+      try {
+        const url = `${PROVIDERS.GEMINI.url}/${PROVIDERS.GEMINI.model}:generateContent?key=${PROVIDERS.GEMINI.key}`;
+        const resp = await fetch(url, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            contents: [{ parts: [{ text: `${systemPrompt}\n\n${userPrompt}` }] }],
+            generationConfig: { maxOutputTokens: 2000, responseMimeType: "application/json" }
+          })
+        });
+
+        if (resp.ok) {
+          const data = await resp.json();
+          const raw = data.candidates[0].content.parts[0].text;
+          const parsed = JSON.parse(raw);
+          const questions = Array.isArray(parsed) ? parsed : Object.values(parsed).find(v => Array.isArray(v)) || [];
+          if (questions.length > 0 && questions[0].options) {
+            console.log(`✅ Quiz via Gemini JSON mode (${questions.length} questions)`);
+            return res.json({ questions, engine: "Google Gemini" });
+          }
+        }
+      } catch (e) {
+        console.warn("Gemini JSON mode failed:", e.message);
+      }
+    }
+
+    // Last resort: generic dispatcher with stricter prompt
+    const { text, engine } = await handleAIRequest(userPrompt, 1500);
+    const cleaned = text.replace(/```json|```/g, '').trim();
+    let questions;
+    try {
+      const parsed = JSON.parse(cleaned);
+      questions = Array.isArray(parsed) ? parsed : Object.values(parsed).find(v => Array.isArray(v)) || [];
+    } catch (e) {
+      // Try bracket extraction
+      const arrMatch = cleaned.match(/\[[\s\S]*\]/);
+      questions = arrMatch ? JSON.parse(arrMatch[0]) : [];
+    }
+    
+    if (!questions || questions.length === 0 || !questions[0]?.options) {
+      return res.status(500).json({ error: "AI returned malformed questions. Please try again." });
+    }
+    return res.json({ questions, engine });
+
+  } catch (err) {
+    console.error("Quiz Generation Error:", err);
+    res.status(500).json({ error: "Failed to generate quiz. Please try again shortly." });
+  }
+});
+
 app.post('/api/legal-chat', async (req, res) => {
   const { message, conversationHistory = [], language = 'en', state } = req.body;
   

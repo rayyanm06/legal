@@ -22,4 +22,5 @@ export const API_ENDPOINTS = {
   GEN_DOC: `${API_BASE_URL}/api/generate-document`,
   DETECT: `${API_BASE_URL}/api/detect-fake-doc`,
   AI_ASK: `${API_BASE_URL}/ai/ask`,
+  GENERATE_QUIZ: `${API_BASE_URL}/api/generate-quiz`,
 };
