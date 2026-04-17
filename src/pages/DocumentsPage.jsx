@@ -529,8 +529,8 @@ const DocumentsPage = () => {
                     <p className="text-white/40 text-sm">Upload a document to see AI analysis</p>
                   </div>
                 </div>
-                )}
               </div>
+              )}
             </motion.div>
           ) : (
             /* Generate Tab */
