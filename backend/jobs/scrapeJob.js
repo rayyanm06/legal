@@ -58,11 +58,14 @@ const scrapeJob = cron.schedule('0 2 * * *', runScrapeCycle, {
   timezone: 'Asia/Kolkata',
 });
 
-// Run once on startup after a short delay (to let the server warm up)
-setTimeout(() => {
-  runScrapeCycle().catch(err =>
-    console.warn('[ScrapeJob] Initial seed failed (non-fatal):', err.message)
-  );
-}, 5000);
+// Run once on startup after a short delay (Disabled on Vercel)
+if (!process.env.VERCEL) {
+  setTimeout(() => {
+    runScrapeCycle().catch(err =>
+      console.warn('[ScrapeJob] Initial seed failed (non-fatal):', err.message)
+    );
+  }, 5000);
+}
+
 
 export default scrapeJob;

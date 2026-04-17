@@ -92,8 +92,9 @@ const AuthPage = ({ setIsLoggedIn, setUserEmail }) => {
         }
       }
     } catch (err) {
-      setError("Server connection failed. Is the backend on 5001?");
+      setError("Server connection failed. Please check your internet and try again.");
     } finally {
+
       setIsLoading(false);
     }
   };
@@ -140,8 +141,9 @@ const AuthPage = ({ setIsLoggedIn, setUserEmail }) => {
       }
     } catch (err) {
       console.error("Auth Exception:", err);
-      setError("Sync failed. Check connection to backend on port 5000.");
+      setError("Sync failed. Please try again or use email login.");
     } finally {
+
       setIsLoading(false);
     }
   };

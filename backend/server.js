@@ -4,6 +4,8 @@
 import 'dotenv/config';
 import express from 'express';
 import cors from 'cors';
+import axios from 'axios';
+
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -20,9 +22,12 @@ import { predictOutcome } from './ml/outcomeModel.js';
 import scrapeJob from './jobs/scrapeJob.js';
 import reminderJob from './jobs/reminderJob.js';
 
-// Start background jobs
-scrapeJob.start();
-reminderJob.start();
+// Start background jobs (Disabled on Vercel/serverless)
+if (!process.env.VERCEL && process.env.NODE_ENV !== 'production') {
+  scrapeJob.start();
+  reminderJob.start();
+}
+
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
@@ -216,136 +221,101 @@ let scenarios = [
 // ─── SMART AI DISPATCHER ───
 
 async function callOllama(prompt, maxTokens, config) {
-  const resp = await fetch(config.url, {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      "Authorization": `Bearer ${config.key}`
-    },
-    body: JSON.stringify({
+  try {
+    const resp = await axios.post(config.url, {
       model: config.model,
       messages: [{ role: "user", content: prompt }],
       max_tokens: maxTokens,
       stream: false
-    })
-  });
-  if (!resp.ok) {
-    const errorText = await resp.text();
-    console.error(`Ollama Response Error (${resp.status}):`, errorText);
-    throw new Error(`Ollama Error: ${errorText}`);
+    }, {
+      headers: { "Authorization": `Bearer ${config.key}` }
+    });
+    return resp.data.choices[0].message.content;
+  } catch (err) {
+    throw new Error(err.response?.data?.error?.message || err.message);
   }
-  const data = await resp.json();
-  return data.choices[0].message.content;
 }
 
 async function callAnthropic(prompt, maxTokens, config) {
-  const resp = await fetch(config.url, {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      "x-api-key": config.key,
-      "anthropic-version": "2023-06-01"
-    },
-    body: JSON.stringify({
+  try {
+    const resp = await axios.post(config.url, {
       model: config.model,
       max_tokens: maxTokens,
       messages: [{ role: "user", content: prompt }],
-    }),
-  });
-  if (!resp.ok) {
-    const errorText = await resp.text();
-    console.error(`Anthropic Response Error (${resp.status}):`, errorText);
-    throw new Error(`Anthropic Error: ${errorText}`);
+    }, {
+      headers: {
+        "x-api-key": config.key,
+        "anthropic-version": "2023-06-01"
+      }
+    });
+    return resp.data.content[0].text;
+  } catch (err) {
+    throw new Error(err.response?.data?.error?.message || err.message);
   }
-  const data = await resp.json();
-  return data.content[0].text;
 }
+
 
 async function callPollinations(prompt, maxTokens, config) {
-  const resp = await fetch(config.url, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({
-      messages: [{ role: "user", content: prompt }],
-      model: config.model,
-      max_tokens: maxTokens
-    })
+  const resp = await axios.post(config.url, {
+    messages: [{ role: "user", content: prompt }],
+    model: config.model,
+    max_tokens: maxTokens
   });
-  if (!resp.ok) throw new Error(`Pollinations Error: ${resp.status}`);
-  return (await resp.text()).trim();
+  return typeof resp.data === 'string' ? resp.data.trim() : JSON.stringify(resp.data);
 }
+
 
 async function callOpenAI(prompt, maxTokens, config) {
-  const resp = await fetch(config.url, {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      "Authorization": `Bearer ${config.key}`
-    },
-    body: JSON.stringify({
+  try {
+    const resp = await axios.post(config.url, {
       model: config.model,
       messages: [{ role: "user", content: prompt }],
       max_tokens: maxTokens
-    })
-  });
-  if (!resp.ok) {
-    const errorText = await resp.text();
-    console.error(`OpenAI Response Error (${resp.status}):`, errorText);
-    throw new Error(`OpenAI Error: ${errorText}`);
+    }, {
+      headers: { "Authorization": `Bearer ${config.key}` }
+    });
+    return resp.data.choices[0].message.content;
+  } catch (err) {
+    throw new Error(err.response?.data?.error?.message || err.message);
   }
-  const data = await resp.json();
-  return data.choices[0].message.content;
 }
-
-// ─── GEMINI CALLER ───
 
 async function callGemini(prompt, maxTokens, config) {
-  const url = `${config.url}/${config.model}:generateContent?key=${config.key}`;
-  const resp = await fetch(url, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({
+  try {
+    const url = `${config.url}/${config.model}:generateContent?key=${config.key}`;
+    const resp = await axios.post(url, {
       contents: [{ parts: [{ text: prompt }] }],
       generationConfig: { maxOutputTokens: maxTokens }
-    })
-  });
-  if (!resp.ok) {
-    const errorText = await resp.text();
-    console.error(`Gemini Response Error (${resp.status}):`, errorText);
-    throw new Error(`Gemini Error: ${errorText}`);
+    });
+    return resp.data.candidates[0].content.parts[0].text;
+  } catch (err) {
+    throw new Error(err.response?.data?.error?.message || err.message);
   }
-  const data = await resp.json();
-  return data.candidates[0].content.parts[0].text;
 }
+
 
 // ─── OPENROUTER CALLER (OpenAI-compatible) ───
 
 async function callOpenRouter(prompt, maxTokens, config, specificModel = null) {
   const modelToUse = specificModel || (Array.isArray(config.models) ? config.models[0] : config.model);
-  const resp = await fetch(config.url, {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      "Authorization": `Bearer ${config.key}`,
-      "HTTP-Referer": "https://nyai.legal",
-      "X-Title": "nyAI Legal Connect"
-    },
-    body: JSON.stringify({
+  try {
+    const resp = await axios.post(config.url, {
       model: modelToUse,
       messages: [{ role: "user", content: prompt }],
       max_tokens: maxTokens
-    })
-  });
-
-  if (!resp.ok) {
-    const errorData = await resp.json().catch(() => ({}));
-    const errorMsg = errorData.error?.message || "Unknown OpenRouter Error";
-    throw new Error(`OpenRouter Error (${resp.status}): ${errorMsg}`);
+    }, {
+      headers: {
+        "Authorization": `Bearer ${config.key}`,
+        "HTTP-Referer": "https://nyai.legal",
+        "X-Title": "nyAI Legal Connect"
+      }
+    });
+    return resp.data.choices?.[0]?.message?.content;
+  } catch (err) {
+    throw new Error(err.response?.data?.error?.message || err.message);
   }
-
-  const data = await resp.json();
-  return data.choices?.[0]?.message?.content;
 }
+
 
 // ─── SMART AI DISPATCHER HELPER ───
 
@@ -469,33 +439,24 @@ Return ONLY this JSON array (no markdown, no explanation, just raw JSON):
     // Try OpenAI with JSON mode first (guaranteed valid JSON)
     if (PROVIDERS.OPENAI.key) {
       try {
-        const resp = await fetch(PROVIDERS.OPENAI.url, {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-            "Authorization": `Bearer ${PROVIDERS.OPENAI.key}`
-          },
-          body: JSON.stringify({
-            model: PROVIDERS.OPENAI.model,
-            messages: [
-              { role: "system", content: systemPrompt },
-              { role: "user", content: userPrompt }
-            ],
-            max_tokens: 2000,
-            response_format: { type: "json_object" }
-          })
+        const resp = await axios.post(PROVIDERS.OPENAI.url, {
+          model: PROVIDERS.OPENAI.model,
+          messages: [
+            { role: "system", content: systemPrompt },
+            { role: "user", content: userPrompt }
+          ],
+          max_tokens: 2000,
+          response_format: { type: "json_object" }
+        }, {
+          headers: { "Authorization": `Bearer ${PROVIDERS.OPENAI.key}` }
         });
 
-        if (resp.ok) {
-          const data = await resp.json();
-          const raw = data.choices[0].message.content;
-          // JSON mode returns an object — extract the array from it
-          const parsed = JSON.parse(raw);
-          const questions = Array.isArray(parsed) ? parsed : Object.values(parsed).find(v => Array.isArray(v)) || [];
-          if (questions.length > 0 && questions[0].options) {
-            console.log(`✅ Quiz via OpenAI JSON mode (${questions.length} questions)`);
-            return res.json({ questions, engine: "OpenAI (GPT-4o-mini)" });
-          }
+        const raw = resp.data.choices[0].message.content;
+        const parsed = JSON.parse(raw);
+        const questions = Array.isArray(parsed) ? parsed : Object.values(parsed).find(v => Array.isArray(v)) || [];
+        if (questions.length > 0 && questions[0].options) {
+          console.log(`✅ Quiz via OpenAI JSON mode (${questions.length} questions)`);
+          return res.json({ questions, engine: "OpenAI (Paid)" });
         }
       } catch (e) {
         console.warn("OpenAI JSON mode failed:", e.message);
@@ -506,29 +467,23 @@ Return ONLY this JSON array (no markdown, no explanation, just raw JSON):
     if (PROVIDERS.GEMINI.key) {
       try {
         const url = `${PROVIDERS.GEMINI.url}/${PROVIDERS.GEMINI.model}:generateContent?key=${PROVIDERS.GEMINI.key}`;
-        const resp = await fetch(url, {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            contents: [{ parts: [{ text: `${systemPrompt}\n\n${userPrompt}` }] }],
-            generationConfig: { maxOutputTokens: 2000, responseMimeType: "application/json" }
-          })
+        const resp = await axios.post(url, {
+          contents: [{ parts: [{ text: `${systemPrompt}\n\n${userPrompt}` }] }],
+          generationConfig: { maxOutputTokens: 2000, responseMimeType: "application/json" }
         });
 
-        if (resp.ok) {
-          const data = await resp.json();
-          const raw = data.candidates[0].content.parts[0].text;
-          const parsed = JSON.parse(raw);
-          const questions = Array.isArray(parsed) ? parsed : Object.values(parsed).find(v => Array.isArray(v)) || [];
-          if (questions.length > 0 && questions[0].options) {
-            console.log(`✅ Quiz via Gemini JSON mode (${questions.length} questions)`);
-            return res.json({ questions, engine: "Google Gemini" });
-          }
+        const raw = resp.data.candidates[0].content.parts[0].text;
+        const parsed = JSON.parse(raw);
+        const questions = Array.isArray(parsed) ? parsed : Object.values(parsed).find(v => Array.isArray(v)) || [];
+        if (questions.length > 0 && questions[0].options) {
+          console.log(`✅ Quiz via Gemini JSON mode (${questions.length} questions)`);
+          return res.json({ questions, engine: "Google Gemini (Free)" });
         }
       } catch (e) {
         console.warn("Gemini JSON mode failed:", e.message);
       }
     }
+
 
     // Last resort: generic dispatcher with stricter prompt
     const { text, engine } = await handleAIRequest(userPrompt, 1500);
