@@ -11,6 +11,7 @@ import GavelLoading from '../components/GavelLoading';
 import { API_ENDPOINTS } from '../api/config';
 import pdfjsWorkerUrl from 'pdfjs-dist/build/pdf.worker.min.mjs?url';
 import axios from 'axios';
+import { createWorker } from 'tesseract.js';
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -25,11 +26,33 @@ async function extractTextFromFile(file) {
       const arrayBuffer = await file.arrayBuffer();
       const pdf = await pdfjsLib.getDocument({ data: arrayBuffer }).promise;
       let fullText = '';
-      for (let i = 1; i <= Math.min(pdf.numPages, 20); i++) {
+      
+      // Try digital text extraction first
+      for (let i = 1; i <= Math.min(pdf.numPages, 10); i++) {
         const page = await pdf.getPage(i);
         const content = await page.getTextContent();
         fullText += content.items.map(it => it.str).join(' ') + '\n';
       }
+
+      // OCR Fallback for scanned documents
+      if (fullText.trim().length < 50) {
+        console.log('📄 Low text detected, attempting OCR...');
+        const worker = await createWorker('eng');
+        for (let i = 1; i <= Math.min(pdf.numPages, 3); i++) { // Limit OCR to 3 pages for speed
+          const page = await pdf.getPage(i);
+          const viewport = page.getViewport({ scale: 1.5 });
+          const canvas = document.createElement('canvas');
+          const context = canvas.getContext('2d');
+          canvas.height = viewport.height;
+          canvas.width = viewport.width;
+          await page.render({ canvasContext: context, viewport }).promise;
+          
+          const { data: { text } } = await worker.recognize(canvas);
+          fullText += text + '\n';
+        }
+        await worker.terminate();
+      }
+
       return fullText.trim();
     } catch (err) {
       console.warn('PDF.js failed, falling back to text read:', err);
@@ -438,7 +461,9 @@ const DocumentsPage = () => {
                                 </div>
                                 <div className="flex-1 min-w-0">
                                   <div className="flex items-center gap-2 mb-1">
-                                    <h5 className="text-sm font-bold text-gray-900 truncate">{flag?.title}</h5>
+                                    <h5 className="text-sm font-bold text-gray-900 truncate">
+                                      {flag?.title || flag?.issue || 'Legal Risk'}
+                                    </h5>
                                     <span className={`text-[8px] font-black px-1.5 py-0.5 rounded uppercase flex-shrink-0 ${
                                       flag?.type === 'Danger' ? 'bg-red-500 text-white' :
                                       flag?.type === 'Warning' ? 'bg-amber-400 text-white' :
