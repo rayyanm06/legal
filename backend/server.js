@@ -584,14 +584,39 @@ app.post('/api/analyze-document', async (req, res) => {
 
   const systemPrompt = `You are an expert Indian legal contract analyst.
 Analyze the document and provide a structured review in JSON format.
-You MUST identify ALL risks and unfair clauses.
+You MUST identify ALL risks and unfair clauses. No document is perfect.
 Return ONLY a valid JSON object.`;
 
-  const userPrompt = `Review this document and provide a JSON analysis:
+  const userPrompt = `Review this document and provide a DETAILED JSON analysis:
 ---
 ${truncated}
 ---
-The result must be a JSON object with: { "documentType": string, "partyA": string, "partyB": string, "healthScore": number, "riskLevel": string, "summary": string, "riskFlags": Array, "keyClauses": Array, "missingClauses": Array, "recommendations": Array }`;
+The result must be a JSON object following this EXACT schema:
+{
+  "documentType": "String",
+  "partyA": "String",
+  "partyB": "String",
+  "healthScore": 0-100,
+  "riskLevel": "Low|Medium|High|Critical",
+  "summary": "String (Summary of document)",
+  "riskFlags": [
+    {
+      "type": "Danger|Warning|Info",
+      "title": "Short title of the risk",
+      "desc": "Detailed explanation of the legal risk under Indian law",
+      "recommendation": "How to mitigate this risk"
+    }
+  ],
+  "keyClauses": [
+    {
+      "clause": "Name of clause",
+      "text": "The relevant excerpt",
+      "status": "Fair|Vague|Unfair"
+    }
+  ],
+  "missingClauses": ["List of missing important clauses"],
+  "recommendations": ["Actionable steps"]
+}`;
 
   try {
     const PROVIDERS = getProviders();
@@ -620,10 +645,8 @@ The result must be a JSON object with: { "documentType": string, "partyA": strin
           console.log("✅ [Analyzer] Success via OpenAI");
         }
       } catch (e) {
-        console.warn("⚠️ [Analyzer] OpenAI failed:", e.message, e.response?.data?.error || "");
+        console.warn("⚠️ [Analyzer] OpenAI failed:", e.message);
       }
-    } else {
-      console.log("⏭️ [Analyzer] OpenAI key missing");
     }
 
     // 2. Try Gemini JSON mode
@@ -642,8 +665,6 @@ The result must be a JSON object with: { "documentType": string, "partyA": strin
       } catch (e) {
         console.warn("⚠️ [Analyzer] Gemini failed:", e.message);
       }
-    } else {
-      console.log("⏭️ [Analyzer] Gemini key missing");
     }
 
     // 3. Final fallback: Generic dispatcher
@@ -657,20 +678,31 @@ The result must be a JSON object with: { "documentType": string, "partyA": strin
           const objMatch = text.match(/\{[\s\S]*\}/);
           parsedData = objMatch ? JSON.parse(objMatch[0]) : null;
         }
-        if (parsedData) console.log("✅ [Analyzer] Success via Fallback Dispatcher");
       } catch (e) {
         console.error("❌ [Analyzer] All providers failed:", e.message);
       }
     }
 
     if (!parsedData) {
-      return res.status(500).json({ error: "Legal AI could not analyze this document. Please check your API keys or try a different format." });
+      return res.status(500).json({ error: "Legal AI could not analyze this document." });
     }
 
-    // Ensure defaults
+    // --- NORMALIZATION LAYER ---
+    // Merge potential alternative keys into riskFlags
+    const altRisks = parsedData.risks || parsedData.issues || parsedData.flags || [];
+    if ((!parsedData.riskFlags || parsedData.riskFlags.length === 0) && altRisks.length > 0) {
+      parsedData.riskFlags = altRisks;
+    }
+
+    // Ensure required fields have defaults
     parsedData.healthScore = parsedData.healthScore ?? 50;
     parsedData.riskLevel = parsedData.riskLevel ?? "Medium";
-    parsedData.riskFlags = parsedData.riskFlags ?? [];
+    parsedData.riskFlags = (parsedData.riskFlags || []).map(f => ({
+      type: f.type || 'Info',
+      title: f.title || f.issue || f.label || 'Risk Identified',
+      desc: f.desc || f.description || f.explanation || '',
+      recommendation: f.recommendation || f.suggestion || ''
+    }));
     parsedData.keyClauses = parsedData.keyClauses ?? [];
     parsedData.missingClauses = parsedData.missingClauses ?? [];
     parsedData.recommendations = parsedData.recommendations ?? [];
@@ -678,7 +710,7 @@ The result must be a JSON object with: { "documentType": string, "partyA": strin
     res.json(parsedData);
   } catch (err) {
     console.error("❌ Document Analyzer Runtime Error:", err);
-    res.status(500).json({ error: "An unexpected error occurred during analysis." });
+    res.status(500).json({ error: "An unexpected error occurred." });
   }
 });
 
