@@ -9,6 +9,8 @@ import {
 } from 'lucide-react';
 import GavelLoading from '../components/GavelLoading';
 import { API_ENDPOINTS } from '../api/config';
+import pdfjsWorkerUrl from 'pdfjs-dist/build/pdf.worker.min.mjs?url';
+import axios from 'axios';
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -18,9 +20,8 @@ async function extractTextFromFile(file) {
   // PDF extraction via pdfjs-dist
   if (name.endsWith('.pdf')) {
     try {
-      const pdfjsLib = await import('pdfjs-dist/legacy/build/pdf');
-      pdfjsLib.GlobalWorkerOptions.workerSrc =
-        'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
+      const pdfjsLib = await import('pdfjs-dist');
+      pdfjsLib.GlobalWorkerOptions.workerSrc = pdfjsWorkerUrl;
       const arrayBuffer = await file.arrayBuffer();
       const pdf = await pdfjsLib.getDocument({ data: arrayBuffer }).promise;
       let fullText = '';
@@ -329,18 +330,18 @@ const DocumentsPage = () => {
                         </div>
 
                         {/* Key Clauses with status */}
-                        {analysisResult?.keyClauses?.map((kc, i) => {
+                        {(analysisResult?.keyClauses || []).map((kc, i) => {
                           const clause = typeof kc === 'string' ? { clause: 'Clause', text: kc, status: 'Info' } : kc;
-                          const color = clauseStatusColor[clause.status] || 'bg-gray-100 text-gray-500';
+                          const color = clauseStatusColor[clause?.status] || 'bg-gray-100 text-gray-500';
                           return (
                             <div key={i} className="bg-white border border-gray-100 rounded-2xl p-4 shadow-sm hover:shadow-md transition-all">
                               <div className="flex items-center justify-between mb-2">
-                                <h4 className="text-sm font-bold text-gray-800">{clause.clause}</h4>
+                                <h4 className="text-sm font-bold text-gray-800">{clause?.clause || 'Clause'}</h4>
                                 <span className={`text-[10px] font-black px-2 py-0.5 rounded-full uppercase tracking-wider ${color}`}>
-                                  {clause.status}
+                                  {clause?.status || 'Info'}
                                 </span>
                               </div>
-                              <p className="text-xs text-gray-500 leading-relaxed">{clause.text}</p>
+                              <p className="text-xs text-gray-500 leading-relaxed">{clause?.text}</p>
                             </div>
                           );
                         })}
@@ -352,7 +353,7 @@ const DocumentsPage = () => {
                               <AlertCircle size={16} /> Missing Clauses
                             </h4>
                             <ul className="space-y-1">
-                              {analysisResult.missingClauses.map((mc, i) => (
+                              {(analysisResult.missingClauses || []).map((mc, i) => (
                                 <li key={i} className="text-xs text-amber-700 flex items-start gap-2">
                                   <span className="mt-0.5">•</span> {mc}
                                 </li>
@@ -420,31 +421,31 @@ const DocumentsPage = () => {
                   )}
                 </div>
 
-                {/* Risk Flags */}
-                {analysisResult?.riskFlags?.length > 0 && (
-                  <div className="space-y-3">
-                    <h4 className="text-[10px] font-black text-gray-400 uppercase tracking-widest px-1">
-                      Risk Flags Detected ({analysisResult.riskFlags.length})
-                    </h4>
-                    {analysisResult.riskFlags.map((flag, i) => {
-                      const Icon = flagIcon[flag.type] || Info;
-                      const color = flagColor[flag.type] || flagColor.Info;
-                      return (
-                        <div key={i} className="bg-white border border-gray-100 rounded-2xl p-4 shadow-sm hover:shadow-md transition-all cursor-pointer">
-                          <div className="flex gap-3">
-                            <div className={`w-9 h-9 rounded-xl flex items-center justify-center flex-shrink-0 ${color}`}>
-                              <Icon size={18} />
-                            </div>
-                            <div className="flex-1 min-w-0">
-                              <div className="flex items-center gap-2 mb-1">
-                                <h5 className="text-sm font-bold text-gray-900 truncate">{flag.title}</h5>
-                                <span className={`text-[8px] font-black px-1.5 py-0.5 rounded uppercase flex-shrink-0 ${
-                                  flag.type === 'Danger' ? 'bg-red-500 text-white' :
-                                  flag.type === 'Warning' ? 'bg-amber-400 text-white' :
-                                  'bg-blue-100 text-blue-700'
-                                }`}>{flag.type}</span>
-                              </div>
-                              <p className="text-xs text-gray-500 leading-relaxed">{flag.desc}</p>
+                    {/* Risk Flags */}
+                    {(analysisResult?.riskFlags || []).length > 0 && (
+                      <div className="space-y-3">
+                        <h4 className="text-[10px] font-black text-gray-400 uppercase tracking-widest px-1">
+                          Risk Flags Detected ({(analysisResult?.riskFlags || []).length})
+                        </h4>
+                        {(analysisResult?.riskFlags || []).map((flag, i) => {
+                          const Icon = flagIcon[flag?.type] || Info;
+                          const color = flagColor[flag?.type] || flagColor.Info;
+                          return (
+                            <div key={i} className="bg-white border border-gray-100 rounded-2xl p-4 shadow-sm hover:shadow-md transition-all cursor-pointer">
+                              <div className="flex gap-3">
+                                <div className={`w-9 h-9 rounded-xl flex items-center justify-center flex-shrink-0 ${color}`}>
+                                  <Icon size={18} />
+                                </div>
+                                <div className="flex-1 min-w-0">
+                                  <div className="flex items-center gap-2 mb-1">
+                                    <h5 className="text-sm font-bold text-gray-900 truncate">{flag?.title}</h5>
+                                    <span className={`text-[8px] font-black px-1.5 py-0.5 rounded uppercase flex-shrink-0 ${
+                                      flag?.type === 'Danger' ? 'bg-red-500 text-white' :
+                                      flag?.type === 'Warning' ? 'bg-amber-400 text-white' :
+                                      'bg-blue-100 text-blue-700'
+                                    }`}>{flag?.type}</span>
+                                  </div>
+                                  <p className="text-xs text-gray-500 leading-relaxed">{flag?.desc}</p>
                               {flag.recommendation && (
                                 <p className="text-xs text-forest font-semibold mt-1.5 flex items-start gap-1">
                                   <ChevronRight size={12} className="mt-0.5 flex-shrink-0" />

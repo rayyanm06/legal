@@ -625,26 +625,23 @@ RULES:
     // Try OpenAI with JSON mode first (guaranteed valid JSON)
     if (PROVIDERS.OPENAI.key) {
       try {
-        const resp = await fetch(PROVIDERS.OPENAI.url, {
-          method: "POST",
+        const resp = await axios.post(PROVIDERS.OPENAI.url, {
+          model: PROVIDERS.OPENAI.model,
+          messages: [
+            { role: "system", content: systemPrompt },
+            { role: "user", content: userPrompt }
+          ],
+          max_tokens: 2000,
+          response_format: { type: "json_object" }
+        }, {
           headers: {
             "Content-Type": "application/json",
             "Authorization": `Bearer ${PROVIDERS.OPENAI.key}`
-          },
-          body: JSON.stringify({
-            model: PROVIDERS.OPENAI.model,
-            messages: [
-              { role: "system", content: systemPrompt },
-              { role: "user", content: userPrompt }
-            ],
-            max_tokens: 2000,
-            response_format: { type: "json_object" }
-          })
+          }
         });
-        if (resp.ok) {
-          const data = await resp.json();
-          parsedData = JSON.parse(data.choices[0].message.content);
-          console.log("✅ Document analysis via OpenAI JSON mode");
+        if (resp.status === 200) {
+          parsedData = JSON.parse(resp.data.choices[0].message.content);
+          console.log("✅ Document analysis via OpenAI JSON mode (Axios)");
         }
       } catch (e) {
         console.warn("OpenAI JSON mode failed for doc analysis:", e.message);
@@ -655,18 +652,13 @@ RULES:
     if (!parsedData && PROVIDERS.GEMINI.key) {
       try {
         const url = `${PROVIDERS.GEMINI.url}/${PROVIDERS.GEMINI.model}:generateContent?key=${PROVIDERS.GEMINI.key}`;
-        const resp = await fetch(url, {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            contents: [{ parts: [{ text: `${systemPrompt}\n\n${userPrompt}` }] }],
-            generationConfig: { maxOutputTokens: 2000, responseMimeType: "application/json" }
-          })
+        const resp = await axios.post(url, {
+          contents: [{ parts: [{ text: `${systemPrompt}\n\n${userPrompt}` }] }],
+          generationConfig: { maxOutputTokens: 2000, responseMimeType: "application/json" }
         });
-        if (resp.ok) {
-          const data = await resp.json();
-          parsedData = JSON.parse(data.candidates[0].content.parts[0].text);
-          console.log("✅ Document analysis via Gemini JSON mode");
+        if (resp.status === 200) {
+          parsedData = JSON.parse(resp.data.candidates[0].content.parts[0].text);
+          console.log("✅ Document analysis via Gemini JSON mode (Axios)");
         }
       } catch (e) {
         console.warn("Gemini JSON mode failed for doc analysis:", e.message);
