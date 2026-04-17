@@ -1,350 +1,563 @@
-import React, { useState, useRef } from 'react';
+import React, { useState, useRef, useCallback } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { 
-  FileText, Upload, CheckCircle2, AlertTriangle, XCircle, 
-  ArrowRight, Download, Search, Info, Plus, Play, 
+import {
+  FileText, Upload, CheckCircle2, AlertTriangle, XCircle,
+  ArrowRight, Download, Search, Info, Plus,
   FileCheck, ShieldAlert, Sparkles, Layout, ChevronRight,
-  ClipboardList, Scale, Trash2, Printer, ShieldCheck, Loader
+  ClipboardList, Scale, Trash2, ShieldCheck, AlertCircle,
+  TrendingDown, TrendingUp, Minus
 } from 'lucide-react';
 import GavelLoading from '../components/GavelLoading';
-import { API_BASE_URL } from '../api/config';
+import { API_ENDPOINTS } from '../api/config';
 
-const DocumentCard = ({ title, type, status, risk = "Low" }) => {
-  const riskColors = {
-    "Low": "text-green-500 bg-green-50",
-    "Medium": "text-amber-500 bg-amber-50",
-    "High": "text-red-500 bg-red-50",
-    "Draft": "text-gray-400 bg-gray-50"
-  };
+// ── Helpers ──────────────────────────────────────────────────────────────────
 
-  return (
-    <motion.div 
-      whileHover={{ y: -5 }}
-      className="bg-white p-6 rounded-3xl border border-gray-100 shadow-xl shadow-gray-200/40 group cursor-pointer hover:border-lime/50 transition-all"
-    >
-      <div className="flex justify-between items-start mb-6">
-        <div className="w-12 h-12 rounded-xl bg-forest/5 flex items-center justify-center text-forest group-hover:bg-lime group-hover:text-forest transition-colors">
-          <FileText size={24} />
-        </div>
-        <span className={`text-[10px] font-black uppercase tracking-widest px-2 py-1 rounded-full ${riskColors[risk]}`}>
-          {risk} Risk
-        </span>
-      </div>
-      <h3 className="text-lg font-bold text-gray-900 group-hover:text-forest transition-colors">{title}</h3>
-      <p className="text-xs text-gray-400 font-bold uppercase tracking-widest mt-1 italic">{type}</p>
-      <div className="mt-8 flex items-center justify-between">
-        <div className="flex items-center gap-1.5 text-[10px] font-black text-gray-400 uppercase tracking-widest">
-          <CheckCircle2 size={12} className="text-green-500" /> {status}
-        </div>
-        <div className="flex gap-2">
-           <button className="p-2 bg-gray-50 rounded-lg text-gray-400 hover:text-forest hover:bg-gray-100 transition-all"><Download size={16} /></button>
-           <button className="p-2 bg-gray-100 rounded-lg text-forest hover:bg-lime transition-all"><ArrowRight size={16} /></button>
-        </div>
-      </div>
-    </motion.div>
-  );
+async function extractTextFromFile(file) {
+  const name = file.name.toLowerCase();
+
+  // PDF extraction via pdfjs-dist
+  if (name.endsWith('.pdf')) {
+    try {
+      const pdfjsLib = await import('pdfjs-dist/legacy/build/pdf');
+      pdfjsLib.GlobalWorkerOptions.workerSrc =
+        'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
+      const arrayBuffer = await file.arrayBuffer();
+      const pdf = await pdfjsLib.getDocument({ data: arrayBuffer }).promise;
+      let fullText = '';
+      for (let i = 1; i <= Math.min(pdf.numPages, 20); i++) {
+        const page = await pdf.getPage(i);
+        const content = await page.getTextContent();
+        fullText += content.items.map(it => it.str).join(' ') + '\n';
+      }
+      return fullText.trim();
+    } catch (err) {
+      console.warn('PDF.js failed, falling back to text read:', err);
+    }
+  }
+
+  // Plain text / DOCX fallback (read as text)
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = e => resolve(e.target.result);
+    reader.onerror = reject;
+    reader.readAsText(file);
+  });
+}
+
+const riskColor = {
+  Low:      { bg: 'bg-green-50',  text: 'text-green-700',  border: 'border-green-200',  dot: '#22c55e' },
+  Medium:   { bg: 'bg-amber-50',  text: 'text-amber-700',  border: 'border-amber-200',  dot: '#f59e0b' },
+  High:     { bg: 'bg-orange-50', text: 'text-orange-700', border: 'border-orange-200', dot: '#f97316' },
+  Critical: { bg: 'bg-red-50',    text: 'text-red-700',    border: 'border-red-200',    dot: '#ef4444' },
 };
 
+const flagIcon = { Danger: XCircle, Warning: AlertTriangle, Info: Info };
+const flagColor = { Danger: 'text-red-500 bg-red-50', Warning: 'text-amber-500 bg-amber-50', Info: 'text-blue-500 bg-blue-50' };
+
+const clauseStatusColor = {
+  Fair:    'bg-green-100 text-green-700',
+  Vague:   'bg-amber-100 text-amber-700',
+  Unfair:  'bg-red-100 text-red-700',
+  Missing: 'bg-gray-100 text-gray-500',
+};
+
+// ── Main Component ────────────────────────────────────────────────────────────
+
 const DocumentsPage = () => {
-  const [activeTab, setActiveTab] = useState("analyze");
+  const [activeTab, setActiveTab] = useState('analyze');
+  const [dragOver, setDragOver] = useState(false);
+  const [file, setFile] = useState(null);
+  const [docText, setDocText] = useState('');
   const [isAnalyzing, setIsAnalyzing] = useState(false);
   const [analysisResult, setAnalysisResult] = useState(null);
-  const [fileName, setFileName] = useState('');
   const [error, setError] = useState('');
+  const [generating, setGenerating] = useState(false);
+  const [generatedResponse, setGeneratedResponse] = useState('');
+  const [previewMode, setPreviewMode] = useState('text'); // 'text' | 'analysis'
   const fileInputRef = useRef();
 
-  const documentTypes = [
-    { title: "Rental Agreement", icon: FileText, desc: "Residential or Commercial leases" },
-    { title: "Legal Notice", icon: AlertTriangle, desc: "Formal notice to individuals/orgs" },
-    { title: "ITR Reply", icon: ClipboardList, desc: "Respond to Income Tax notices" },
-    { title: "Copyright Notice", icon: Scale, desc: "Protect your creative work" },
-    { title: "NDA", icon: ShieldAlert, desc: "Non-disclosure agreements" },
-    { title: "Employment Contract", icon: Layout, desc: "For new hires or freelancers" }
-  ];
-
-  const handleFileChange = async (e) => {
-    const file = e.target.files[0];
-    if (!file) return;
-    setFileName(file.name);
-    setError('');
-    setIsAnalyzing(true);
+  const processFile = useCallback(async (selectedFile) => {
+    if (!selectedFile) return;
+    setFile(selectedFile);
     setAnalysisResult(null);
+    setError('');
+    setGeneratedResponse('');
+    setIsAnalyzing(true);
 
     try {
-      const text = await file.text();
-      if (!text.trim()) {
-        setError('File appears to be empty or unreadable. Try a .txt or .docx file.');
-        setIsAnalyzing(false);
-        return;
+      const text = await extractTextFromFile(selectedFile);
+      if (!text || text.trim().length < 30) {
+        throw new Error('Could not extract enough text from this file. Please try a different format.');
       }
+      setDocText(text);
 
-      const res = await fetch(`${API_BASE_URL}/api/analyze-document`, {
+      // Call backend analyze endpoint
+      const resp = await fetch(API_ENDPOINTS.ANALYZE, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ documentText: text })
+        body: JSON.stringify({ documentText: text }),
       });
 
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.error || 'Analysis failed');
+      if (!resp.ok) {
+        const errData = await resp.json().catch(() => ({}));
+        throw new Error(errData.error || `Server error ${resp.status}`);
+      }
 
-      const riskFlags = data.riskFlags || [];
-      const dangers = riskFlags.filter(f => f.type === 'Danger').length;
-      const warnings = riskFlags.filter(f => f.type === 'Warning').length;
-      const penalty = (dangers * 20) + (warnings * 8);
-      const score = Math.max(0, Math.min(100, 100 - penalty));
-      const risk = score >= 70 ? 'Low' : score >= 45 ? 'Medium' : 'High';
-
-      setAnalysisResult({
-        ...data,
-        score,
-        risk,
-        flags: riskFlags
-      });
+      const data = await resp.json();
+      setAnalysisResult(data);
+      setPreviewMode('analysis');
     } catch (err) {
-      console.error('Analyze error:', err);
-      setError(err.message || 'Failed to analyze. Check your connection.');
+      console.error('Analysis error:', err);
+      setError(err.message || 'Analysis failed. Please try again.');
     } finally {
       setIsAnalyzing(false);
-      if (fileInputRef.current) fileInputRef.current.value = '';
+    }
+  }, []);
+
+  const handleDrop = useCallback((e) => {
+    e.preventDefault();
+    setDragOver(false);
+    const dropped = e.dataTransfer.files[0];
+    if (dropped) processFile(dropped);
+  }, [processFile]);
+
+  const handleFileInput = (e) => {
+    const selected = e.target.files[0];
+    if (selected) processFile(selected);
+  };
+
+  const handleGenerateResponse = async () => {
+    if (!docText || !analysisResult) return;
+    setGenerating(true);
+    setGeneratedResponse('');
+    try {
+      const resp = await fetch(API_ENDPOINTS.RESPONSE, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ documentText: docText, analysisResult }),
+      });
+      const data = await resp.json();
+      setGeneratedResponse(data.text || '');
+    } catch (err) {
+      setGeneratedResponse('Failed to generate response. Please try again.');
+    } finally {
+      setGenerating(false);
     }
   };
 
+  const reset = () => {
+    setFile(null);
+    setDocText('');
+    setAnalysisResult(null);
+    setError('');
+    setGeneratedResponse('');
+    setPreviewMode('text');
+  };
+
+  const score = analysisResult?.healthScore ?? 0;
+  const riskLevel = analysisResult?.riskLevel ?? 'Medium';
+  const rc = riskColor[riskLevel] || riskColor.Medium;
+
+  // ── Render ─────────────────────────────────────────────────────────────────
   return (
-    <div className="pt-32 pb-20 px-6 min-h-screen bg-offwhite">
+    <div className="pt-28 pb-20 px-4 md:px-6 min-h-screen bg-offwhite">
       <div className="max-w-7xl mx-auto">
-        <header className="mb-20">
-          <div className="flex flex-col md:flex-row justify-between items-start md:items-end gap-8 mb-12">
+
+        {/* Header */}
+        <header className="mb-12">
+          <div className="flex flex-col md:flex-row justify-between items-start md:items-end gap-8">
             <div className="max-w-2xl">
-               <h1 className="text-5xl md:text-7xl font-bold text-gray-900 heading-display lowercase mb-6 tracking-tighter">smart <br/><span className="text-forest italic underline decoration-lime decoration-8 underline-offset-4">document studio.</span></h1>
-               <p className="text-xl text-gray-500 leading-relaxed">Analyze risky contracts in seconds or generate production-grade legal documents in your language.</p>
+              <h1 className="text-5xl md:text-7xl font-bold text-gray-900 heading-display lowercase mb-4 tracking-tighter">
+                smart <br />
+                <span className="text-forest italic underline decoration-lime decoration-8 underline-offset-4">document studio.</span>
+              </h1>
+              <p className="text-xl text-gray-500 leading-relaxed">
+                Upload any contract. Our AI finds every risk, every unfair clause, every missing protection.
+              </p>
             </div>
             <div className="flex gap-2 bg-gray-100 p-1.5 rounded-2xl border border-gray-200">
-               <button 
-                  onClick={() => setActiveTab("analyze")}
-                  className={`px-8 py-4 rounded-xl text-sm font-black uppercase tracking-widest flex items-center gap-3 transition-all ${activeTab === "analyze" ? 'bg-forest text-lime shadow-xl shadow-forest/20' : 'text-gray-400 hover:text-gray-700'}`}
-               >
-                 <Search size={18} /> Analyze
-               </button>
-               <button 
-                  onClick={() => setActiveTab("generate")}
-                  className={`px-8 py-4 rounded-xl text-sm font-black uppercase tracking-widest flex items-center gap-3 transition-all ${activeTab === "generate" ? 'bg-forest text-lime shadow-xl shadow-forest/20' : 'text-gray-400 hover:text-gray-700'}`}
-               >
-                 <Plus size={18} /> Generate
-               </button>
+              <button
+                onClick={() => setActiveTab('analyze')}
+                className={`px-8 py-4 rounded-xl text-sm font-black uppercase tracking-widest flex items-center gap-3 transition-all ${activeTab === 'analyze' ? 'bg-forest text-lime shadow-xl shadow-forest/20' : 'text-gray-400 hover:text-gray-700'}`}
+              >
+                <Search size={18} /> Analyze
+              </button>
+              <button
+                onClick={() => setActiveTab('generate')}
+                className={`px-8 py-4 rounded-xl text-sm font-black uppercase tracking-widest flex items-center gap-3 transition-all ${activeTab === 'generate' ? 'bg-forest text-lime shadow-xl shadow-forest/20' : 'text-gray-400 hover:text-gray-700'}`}
+              >
+                <Plus size={18} /> Generate
+              </button>
             </div>
           </div>
         </header>
 
         <AnimatePresence mode="wait">
-          {activeTab === "analyze" ? (
-            <motion.div 
-               key="analyze"
-               initial={{ opacity: 0, scale: 0.95 }}
-               animate={{ opacity: 1, scale: 1 }}
-               exit={{ opacity: 0, scale: 0.95 }}
-               className="grid grid-cols-1 lg:grid-cols-3 gap-12"
+          {activeTab === 'analyze' ? (
+            <motion.div
+              key="analyze"
+              initial={{ opacity: 0, y: 20 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0, y: -20 }}
+              className="grid grid-cols-1 lg:grid-cols-5 gap-8"
             >
-              {/* Real hidden file input — triggered programmatically */}
-              <input
-                ref={fileInputRef}
-                type="file"
-                accept=".txt,.doc,.docx,.pdf,.md"
-                style={{ position: 'absolute', width: 0, height: 0, opacity: 0, pointerEvents: 'none' }}
-                onChange={handleFileChange}
-              />
+              {/* LEFT: Upload + Preview */}
+              <div className="lg:col-span-3 flex flex-col gap-6">
 
-              <div className="lg:col-span-2">
-                {error && (
-                  <div className="mb-6 p-4 bg-red-50 border border-red-200 rounded-2xl text-sm font-bold text-red-600 flex items-center gap-3">
-                    <ShieldAlert size={18} /> {error}
-                    <button onClick={() => setError('')} className="ml-auto text-red-400 hover:text-red-600"><XCircle size={16} /></button>
-                  </div>
-                )}
-
-                {!analysisResult ? (
-                  <div 
-                    onClick={() => !isAnalyzing && fileInputRef.current?.click()}
-                    className={`aspect-[16/10] bg-white border-4 border-dashed rounded-[3rem] flex flex-col items-center justify-center p-12 text-center group overflow-hidden relative transition-all ${isAnalyzing ? 'cursor-wait border-lime' : 'cursor-pointer hover:border-lime border-gray-100'}`}
+                {/* Upload Zone */}
+                {!file ? (
+                  <div
+                    onDragOver={e => { e.preventDefault(); setDragOver(true); }}
+                    onDragLeave={() => setDragOver(false)}
+                    onDrop={handleDrop}
+                    onClick={() => fileInputRef.current?.click()}
+                    className={`rounded-[2.5rem] border-4 border-dashed flex flex-col items-center justify-center p-16 text-center cursor-pointer transition-all ${
+                      dragOver ? 'border-lime bg-lime/5' : 'border-gray-200 bg-white hover:border-lime'
+                    }`}
+                    style={{ minHeight: 380 }}
                   >
-                    {isAnalyzing && (
-                      <div className="absolute inset-0 bg-white/95 backdrop-blur-sm z-10 flex flex-col items-center justify-center p-12">
-                         <GavelLoading size="large" text="Analyzing Clauses" subtext="Scanning for legal triggers & cross-referencing Penal Codes" />
-                         <div className="flex items-center gap-3 mt-6 text-sm text-gray-400 font-medium">
-                           <Loader size={16} className="animate-spin text-forest" />
-                           Reading {fileName}…
-                         </div>
-                      </div>
-                    )}
-                    <div className="w-24 h-24 bg-gray-50 rounded-full flex items-center justify-center text-gray-300 group-hover:bg-lime/10 group-hover:text-lime transition-all mb-8 shadow-inner ring-1 ring-gray-100">
-                      <Upload size={40} className="group-hover:scale-110 transition-transform" />
+                    <input
+                      ref={fileInputRef}
+                      type="file"
+                      accept=".pdf,.txt,.docx,.doc"
+                      className="hidden"
+                      onChange={handleFileInput}
+                    />
+                    <div className="w-24 h-24 bg-gray-50 rounded-full flex items-center justify-center mb-8 shadow-inner ring-1 ring-gray-100 group-hover:bg-lime/10">
+                      <Upload size={40} className="text-gray-300" />
                     </div>
-                    <h2 className="text-3xl font-bold text-gray-900 mb-4">Upload Document</h2>
-                    <p className="text-gray-400 max-w-sm mb-10 text-lg">Click anywhere here to select a .txt, .docx, or .pdf file for AI analysis.</p>
-                    <button
-                      type="button"
-                      onClick={(e) => { e.stopPropagation(); fileInputRef.current?.click(); }}
-                      className="bg-forest text-offwhite font-black px-10 py-5 rounded-2xl hover:bg-forest-light transform hover:scale-105 transition-all shadow-2xl shadow-forest/20 flex items-center gap-4"
-                    >
-                       Select from Device <ArrowRight size={24} className="text-lime" />
+                    <h2 className="text-3xl font-bold text-gray-900 mb-3">Drop Your Document</h2>
+                    <p className="text-gray-400 max-w-xs mb-8 leading-relaxed">
+                      PDF, DOC, DOCX, or TXT — any contract, agreement, notice, or legal document.
+                    </p>
+                    <button className="bg-forest text-offwhite font-black px-10 py-5 rounded-2xl flex items-center gap-4 shadow-2xl shadow-forest/10 hover:bg-opacity-90 transition-all">
+                      Select File <ArrowRight size={20} className="text-lime" />
                     </button>
-                    <div className="mt-12 flex gap-8">
-                       <span className="flex items-center gap-2 text-[10px] font-black text-gray-300 uppercase tracking-widest"><ShieldCheck size={14} className="text-green-500" /> Safe &amp; Secure</span>
-                       <span className="flex items-center gap-2 text-[10px] font-black text-gray-300 uppercase tracking-widest"><Search size={14} className="text-blue-500" /> Deep Clause Analysis</span>
+                    <div className="mt-8 flex gap-8">
+                      <span className="flex items-center gap-2 text-[10px] font-black text-gray-300 uppercase tracking-widest">
+                        <ShieldCheck size={14} className="text-green-500" /> Secure Analysis
+                      </span>
+                      <span className="flex items-center gap-2 text-[10px] font-black text-gray-300 uppercase tracking-widest">
+                        <Search size={14} className="text-blue-500" /> AI-Powered
+                      </span>
                     </div>
                   </div>
                 ) : (
-                  <div className="bg-white rounded-[3rem] border border-gray-100 shadow-2xl overflow-hidden flex flex-col">
-                     <div className="bg-gray-50 p-6 border-b border-gray-100 flex justify-between items-center">
-                        <div className="flex items-center gap-4">
-                           <FileText size={20} className="text-forest" />
-                           <h3 className="font-bold text-gray-900">{fileName || 'Analyzed Document'}</h3>
-                           {analysisResult.documentType && (
-                             <span className="text-[10px] bg-lime/20 border border-lime/30 px-2 py-1 rounded font-black text-forest uppercase">{analysisResult.documentType}</span>
-                           )}
+                  /* Document Preview Panel */
+                  <div className="bg-white rounded-[2rem] border border-gray-100 shadow-xl overflow-hidden flex flex-col" style={{ minHeight: 480 }}>
+                    {/* File Header */}
+                    <div className="bg-gray-50 border-b border-gray-100 px-6 py-4 flex items-center justify-between">
+                      <div className="flex items-center gap-3">
+                        <FileText size={20} className="text-forest" />
+                        <div>
+                          <h3 className="font-bold text-gray-900 text-sm">{file.name}</h3>
+                          <p className="text-[10px] text-gray-400 font-bold uppercase tracking-widest">
+                            {(file.size / 1024).toFixed(1)} KB
+                          </p>
                         </div>
-                        <button 
-                          onClick={() => { setAnalysisResult(null); setFileName(''); setError(''); }}
-                          className="p-2 border border-gray-200 rounded-xl text-gray-400 hover:text-red-500 transition-all"
+                      </div>
+                      <div className="flex items-center gap-2">
+                        {analysisResult && (
+                          <div className="flex bg-gray-100 rounded-xl p-1 gap-1">
+                            <button
+                              onClick={() => setPreviewMode('text')}
+                              className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all ${previewMode === 'text' ? 'bg-white shadow text-forest' : 'text-gray-400'}`}
+                            >
+                              Raw Text
+                            </button>
+                            <button
+                              onClick={() => setPreviewMode('analysis')}
+                              className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all ${previewMode === 'analysis' ? 'bg-white shadow text-forest' : 'text-gray-400'}`}
+                            >
+                              Analysis View
+                            </button>
+                          </div>
+                        )}
+                        <button
+                          onClick={reset}
+                          className="p-2 border border-gray-200 rounded-xl text-gray-400 hover:text-red-500 hover:border-red-200 transition-all"
+                          title="Remove document"
                         >
-                          <Trash2 size={18} />
+                          <Trash2 size={16} />
                         </button>
-                     </div>
+                      </div>
+                    </div>
 
-                     {analysisResult.textPreview && (
-                       <div className="p-8 border-b border-gray-50">
-                         <p className="text-[10px] font-black text-gray-400 uppercase tracking-widest mb-3">Document Preview</p>
-                         <p className="text-sm text-gray-600 leading-relaxed italic bg-gray-50 p-4 rounded-xl border border-gray-100">"{analysisResult.textPreview}"</p>
-                       </div>
-                     )}
+                    {/* Content Area */}
+                    {isAnalyzing ? (
+                      <div className="flex-1 flex items-center justify-center p-12">
+                        <GavelLoading
+                          size="large"
+                          text="Analyzing Document"
+                          subtext="Scanning all clauses with Indian legal expertise..."
+                        />
+                      </div>
+                    ) : error ? (
+                      <div className="flex-1 flex items-center justify-center p-12">
+                        <div className="text-center">
+                          <AlertCircle size={48} className="text-red-400 mx-auto mb-4" />
+                          <h3 className="text-lg font-bold text-gray-700 mb-2">Analysis Failed</h3>
+                          <p className="text-sm text-gray-500 mb-6 max-w-sm">{error}</p>
+                          <button
+                            onClick={reset}
+                            className="px-6 py-3 bg-forest text-lime rounded-xl font-bold text-sm"
+                          >
+                            Try Again
+                          </button>
+                        </div>
+                      </div>
+                    ) : previewMode === 'text' ? (
+                      /* Raw text preview */
+                      <div className="flex-1 overflow-y-auto p-6" style={{ maxHeight: 500 }}>
+                        <div className="font-mono text-xs text-gray-600 leading-relaxed whitespace-pre-wrap bg-gray-50 rounded-xl p-4 border border-gray-100">
+                          {docText || 'No text extracted.'}
+                        </div>
+                      </div>
+                    ) : (
+                      /* Analysis view — annotated clauses */
+                      <div className="flex-1 overflow-y-auto p-6 space-y-4" style={{ maxHeight: 500 }}>
+                        {/* Doc type badge */}
+                        <div className="flex items-center gap-3 mb-2">
+                          <span className="px-3 py-1 bg-forest text-lime text-xs font-black rounded-full uppercase tracking-widest">
+                            {analysisResult?.documentType}
+                          </span>
+                          {analysisResult?.partyA && (
+                            <span className="text-xs text-gray-500">
+                              {analysisResult.partyA} ↔ {analysisResult.partyB}
+                            </span>
+                          )}
+                        </div>
 
-                     {analysisResult.keyClauses?.length > 0 && (
-                       <div className="p-8 border-b border-gray-50">
-                         <p className="text-[10px] font-black text-gray-400 uppercase tracking-widest mb-4">Key Clauses Identified</p>
-                         <ul className="space-y-2">
-                           {analysisResult.keyClauses.map((clause, i) => (
-                             <li key={i} className="flex items-start gap-3 text-sm text-gray-700">
-                               <CheckCircle2 size={16} className="text-forest flex-shrink-0 mt-0.5" />
-                               {clause}
-                             </li>
-                           ))}
-                         </ul>
-                       </div>
-                     )}
+                        {/* Key Clauses with status */}
+                        {analysisResult?.keyClauses?.map((kc, i) => {
+                          const clause = typeof kc === 'string' ? { clause: 'Clause', text: kc, status: 'Info' } : kc;
+                          const color = clauseStatusColor[clause.status] || 'bg-gray-100 text-gray-500';
+                          return (
+                            <div key={i} className="bg-white border border-gray-100 rounded-2xl p-4 shadow-sm hover:shadow-md transition-all">
+                              <div className="flex items-center justify-between mb-2">
+                                <h4 className="text-sm font-bold text-gray-800">{clause.clause}</h4>
+                                <span className={`text-[10px] font-black px-2 py-0.5 rounded-full uppercase tracking-wider ${color}`}>
+                                  {clause.status}
+                                </span>
+                              </div>
+                              <p className="text-xs text-gray-500 leading-relaxed">{clause.text}</p>
+                            </div>
+                          );
+                        })}
 
-                     {analysisResult.summary && (
-                       <div className="p-8">
-                         <p className="text-[10px] font-black text-gray-400 uppercase tracking-widest mb-3">Legal Summary</p>
-                         <p className="text-sm text-gray-700 leading-relaxed">{analysisResult.summary}</p>
-                       </div>
-                     )}
+                        {/* Missing Clauses */}
+                        {analysisResult?.missingClauses?.length > 0 && (
+                          <div className="bg-amber-50 border border-amber-200 rounded-2xl p-4">
+                            <h4 className="text-sm font-bold text-amber-800 mb-2 flex items-center gap-2">
+                              <AlertCircle size={16} /> Missing Clauses
+                            </h4>
+                            <ul className="space-y-1">
+                              {analysisResult.missingClauses.map((mc, i) => (
+                                <li key={i} className="text-xs text-amber-700 flex items-start gap-2">
+                                  <span className="mt-0.5">•</span> {mc}
+                                </li>
+                              ))}
+                            </ul>
+                          </div>
+                        )}
+                      </div>
+                    )}
                   </div>
                 )}
               </div>
 
-              {/* Sidebar */}
-              <div className="space-y-8">
-                 <div className="bg-forest noise-overlay p-10 rounded-[3rem] border border-white/10 shadow-2xl relative overflow-hidden">
-                    <h4 className="text-white text-[10px] font-black uppercase tracking-widest mb-6 border-b border-white/5 pb-4">Legal Health Score</h4>
-                    <div className="flex flex-col items-center">
-                       <div className="relative w-48 h-48 flex items-center justify-center mb-6">
-                          <svg className="w-full h-full transform -rotate-90">
-                             <circle cx="96" cy="96" r="88" stroke="currentColor" strokeWidth="8" fill="transparent" className="text-white/5" />
-                             <motion.circle 
-                                cx="96" cy="96" r="88" stroke="currentColor" strokeWidth="12" fill="transparent" 
-                                className={analysisResult ? (analysisResult.risk === 'High' ? 'text-red-500' : analysisResult.risk === 'Medium' ? 'text-amber-400' : 'text-lime') : 'text-lime/20'}
-                                strokeDasharray="553"
-                                initial={{ strokeDashoffset: 553 }}
-                                animate={{ strokeDashoffset: 553 - (553 * (analysisResult?.score || 0) / 100) }}
-                                transition={{ duration: 1.5, ease: "easeOut" }}
-                             />
+              {/* RIGHT: Analysis Results Panel */}
+              <div className="lg:col-span-2 space-y-6">
+
+                {/* Health Score Card */}
+                <div className="bg-forest rounded-[2rem] p-8 text-white relative overflow-hidden">
+                  <div className="absolute inset-0 opacity-5" style={{ backgroundImage: 'url(/noise.png)' }} />
+                  <h4 className="text-[10px] font-black uppercase tracking-widest text-white/40 mb-6">
+                    Document Intelligence
+                  </h4>
+
+                  {!analysisResult && !isAnalyzing ? (
+                    <div className="text-center py-4">
+                      <FileCheck size={40} className="text-white/20 mx-auto mb-4" />
+                      <p className="text-white/40 text-sm">Upload a document to see AI analysis</p>
+                    </div>
+                  ) : isAnalyzing ? (
+                    <div className="flex justify-center py-4">
+                      <GavelLoading size="small" text="Analyzing..." />
+                    </div>
+                  ) : (
+                    <>
+                      {/* Score Ring */}
+                      <div className="flex flex-col items-center mb-6">
+                        <div className="relative w-36 h-36 flex items-center justify-center mb-4">
+                          <svg className="w-full h-full -rotate-90">
+                            <circle cx="72" cy="72" r="64" stroke="white" strokeOpacity="0.1" strokeWidth="8" fill="none" />
+                            <motion.circle
+                              cx="72" cy="72" r="64"
+                              stroke={rc.dot}
+                              strokeWidth="10"
+                              fill="none"
+                              strokeDasharray="402"
+                              initial={{ strokeDashoffset: 402 }}
+                              animate={{ strokeDashoffset: 402 - (402 * score / 100) }}
+                              transition={{ duration: 1.4, ease: 'easeOut' }}
+                              strokeLinecap="round"
+                            />
                           </svg>
                           <div className="absolute inset-0 flex flex-col items-center justify-center">
-                             <span className="text-5xl font-black text-white heading-display">{analysisResult?.score != null ? `${analysisResult.score}%` : '—'}</span>
-                             <span className="text-[10px] font-black text-white/40 uppercase tracking-widest mt-2">{analysisResult?.risk || 'No file'} Risk</span>
+                            <span className="text-4xl font-black text-white">{score}</span>
+                            <span className="text-[10px] text-white/40 font-black uppercase tracking-widest">/100</span>
                           </div>
-                       </div>
-                       <p className="text-white/60 text-sm text-center italic leading-relaxed">
-                          {analysisResult?.summary?.substring(0, 120) || "Upload a document to see risk score."}
-                          {(analysisResult?.summary?.length || 0) > 120 ? '…' : ''}
-                       </p>
-                    </div>
-                 </div>
-
-                 {analysisResult?.flags?.length > 0 && (
-                   <div className="space-y-4">
-                      <h4 className="text-[10px] font-black text-gray-400 uppercase tracking-widest px-4">Risk Flags</h4>
-                      {analysisResult.flags.map((flag, i) => (
-                        <div key={i} className="bg-white p-5 rounded-2xl border border-gray-100 flex gap-4 hover:border-lime/50 transition-all">
-                           <div className={`w-10 h-10 rounded-xl flex items-center justify-center flex-shrink-0 ${flag.type === 'Danger' ? 'bg-red-50 text-red-500' : flag.type === 'Safe' ? 'bg-green-50 text-green-500' : 'bg-amber-50 text-amber-500'}`}>
-                              {flag.type === 'Danger' ? <ShieldAlert size={20} /> : flag.type === 'Safe' ? <CheckCircle2 size={20} /> : <AlertTriangle size={20} />}
-                           </div>
-                           <div>
-                              <h5 className="text-xs font-black text-gray-900 mb-1 flex items-center gap-2">
-                                 {flag.title}
-                                 <span className={`text-[8px] font-black px-1.5 py-0.5 rounded uppercase ${flag.type === 'Danger' ? 'bg-red-500 text-white' : flag.type === 'Safe' ? 'bg-green-500 text-white' : 'bg-amber-500 text-white'}`}>{flag.type}</span>
-                              </h5>
-                              <p className="text-[10px] text-gray-500 leading-normal">{flag.desc}</p>
-                           </div>
                         </div>
+                        <span className={`px-4 py-1.5 rounded-full text-xs font-black uppercase tracking-widest ${rc.bg} ${rc.text}`}>
+                          {riskLevel} Risk
+                        </span>
+                      </div>
+                      <p className="text-white/60 text-sm text-center leading-relaxed italic">
+                        {analysisResult?.summary}
+                      </p>
+                    </>
+                  )}
+                </div>
+
+                {/* Risk Flags */}
+                {analysisResult?.riskFlags?.length > 0 && (
+                  <div className="space-y-3">
+                    <h4 className="text-[10px] font-black text-gray-400 uppercase tracking-widest px-1">
+                      Risk Flags Detected ({analysisResult.riskFlags.length})
+                    </h4>
+                    {analysisResult.riskFlags.map((flag, i) => {
+                      const Icon = flagIcon[flag.type] || Info;
+                      const color = flagColor[flag.type] || flagColor.Info;
+                      return (
+                        <div key={i} className="bg-white border border-gray-100 rounded-2xl p-4 shadow-sm hover:shadow-md transition-all cursor-pointer">
+                          <div className="flex gap-3">
+                            <div className={`w-9 h-9 rounded-xl flex items-center justify-center flex-shrink-0 ${color}`}>
+                              <Icon size={18} />
+                            </div>
+                            <div className="flex-1 min-w-0">
+                              <div className="flex items-center gap-2 mb-1">
+                                <h5 className="text-sm font-bold text-gray-900 truncate">{flag.title}</h5>
+                                <span className={`text-[8px] font-black px-1.5 py-0.5 rounded uppercase flex-shrink-0 ${
+                                  flag.type === 'Danger' ? 'bg-red-500 text-white' :
+                                  flag.type === 'Warning' ? 'bg-amber-400 text-white' :
+                                  'bg-blue-100 text-blue-700'
+                                }`}>{flag.type}</span>
+                              </div>
+                              <p className="text-xs text-gray-500 leading-relaxed">{flag.desc}</p>
+                              {flag.recommendation && (
+                                <p className="text-xs text-forest font-semibold mt-1.5 flex items-start gap-1">
+                                  <ChevronRight size={12} className="mt-0.5 flex-shrink-0" />
+                                  {flag.recommendation}
+                                </p>
+                              )}
+                            </div>
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
+
+                {/* No flags fallback */}
+                {analysisResult && analysisResult.riskFlags?.length === 0 && (
+                  <div className="bg-green-50 border border-green-100 rounded-2xl p-4 text-center">
+                    <CheckCircle2 size={24} className="text-green-500 mx-auto mb-2" />
+                    <p className="text-sm text-green-700 font-semibold">No major risk flags detected</p>
+                    <p className="text-xs text-green-600 mt-1">This document appears relatively fair.</p>
+                  </div>
+                )}
+
+                {/* Recommendations */}
+                {analysisResult?.recommendations?.length > 0 && (
+                  <div className="bg-white border border-gray-100 rounded-2xl p-5 shadow-sm">
+                    <h4 className="text-sm font-black text-gray-900 mb-3 flex items-center gap-2">
+                      <Sparkles size={16} className="text-lime" /> AI Recommendations
+                    </h4>
+                    <ul className="space-y-2">
+                      {analysisResult.recommendations.map((r, i) => (
+                        <li key={i} className="text-xs text-gray-600 flex items-start gap-2 leading-relaxed">
+                          <span className="w-5 h-5 rounded-full bg-lime/20 text-forest font-black text-[10px] flex items-center justify-center flex-shrink-0 mt-0.5">{i + 1}</span>
+                          {r}
+                        </li>
                       ))}
-                      <button
-                        onClick={() => { setAnalysisResult(null); setFileName(''); fileInputRef.current?.click(); }}
-                        className="w-full bg-lime text-forest font-black py-4 rounded-2xl shadow-xl shadow-lime/10 hover:bg-lime-hover transform hover:scale-102 transition-all flex items-center justify-center gap-3 mt-6"
-                      >
-                        Analyze Another <Sparkles size={18} />
-                      </button>
-                   </div>
-                 )}
+                    </ul>
+                  </div>
+                )}
+
+                {/* Generate Legal Response Button */}
+                {analysisResult && (
+                  <div className="space-y-4">
+                    <button
+                      onClick={handleGenerateResponse}
+                      disabled={generating}
+                      className="w-full bg-lime text-forest font-black py-5 rounded-2xl shadow-xl shadow-lime/10 hover:bg-lime-hover transition-all flex items-center justify-center gap-3 disabled:opacity-60"
+                    >
+                      {generating ? 'Drafting Response...' : 'Generate Legal Response'} <Sparkles size={18} />
+                    </button>
+
+                    {generating && (
+                      <div className="flex justify-center py-4">
+                        <GavelLoading size="small" text="Drafting your legal response..." />
+                      </div>
+                    )}
+
+                    {generatedResponse && (
+                      <div className="bg-white border border-gray-100 rounded-2xl p-5 shadow-sm">
+                        <h4 className="text-sm font-black text-gray-900 mb-3">📄 Generated Legal Response</h4>
+                        <div className="text-xs text-gray-600 whitespace-pre-wrap leading-relaxed font-mono bg-gray-50 p-4 rounded-xl max-h-64 overflow-y-auto">
+                          {generatedResponse}
+                        </div>
+                        <button
+                          onClick={() => {
+                            const blob = new Blob([generatedResponse], { type: 'text/plain' });
+                            const url = URL.createObjectURL(blob);
+                            const a = document.createElement('a');
+                            a.href = url; a.download = 'legal_response.txt'; a.click();
+                          }}
+                          className="mt-3 w-full py-3 border border-gray-200 rounded-xl text-xs font-black text-gray-500 hover:text-forest hover:border-forest transition-all flex items-center justify-center gap-2"
+                        >
+                          <Download size={14} /> Download as TXT
+                        </button>
+                      </div>
+                    )}
+                  </div>
+                )}
               </div>
             </motion.div>
           ) : (
-            <motion.div 
-               key="generate"
-               initial={{ opacity: 0, scale: 0.95 }}
-               animate={{ opacity: 1, scale: 1 }}
-               exit={{ opacity: 0, scale: 0.95 }}
+            /* Generate Tab */
+            <motion.div
+              key="generate"
+              initial={{ opacity: 0, y: 20 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0, y: -20 }}
             >
-               <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-8">
-                  {documentTypes.map((doc, idx) => (
-                    <motion.div 
-                      key={idx}
-                      whileHover={{ scale: 1.05 }}
-                      className="bg-white p-8 rounded-[2.5rem] border border-gray-100 shadow-xl shadow-gray-200/50 group cursor-pointer hover:border-lime hover:shadow-2xl transition-all"
-                    >
-                      <div className="w-16 h-16 rounded-2xl bg-gray-50 flex items-center justify-center text-gray-400 mb-8 group-hover:bg-lime/20 group-hover:text-lime transition-all">
-                        <doc.icon size={32} />
-                      </div>
-                      <h3 className="text-2xl font-bold text-gray-900 mb-2">{doc.title}</h3>
-                      <p className="text-sm text-gray-500 leading-relaxed mb-8">{doc.desc}</p>
-                      <button className="w-full py-4 border border-gray-100 rounded-xl text-xs font-black uppercase tracking-widest text-gray-400 group-hover:border-forest group-hover:text-forest transition-all flex items-center justify-center gap-3">
-                         Generate Draft <ArrowRight size={16} />
-                      </button>
-                    </motion.div>
-                  ))}
-                  <div className="bg-forest noise-overlay rounded-[2.5rem] p-8 flex flex-col justify-center items-center text-center group cursor-pointer border border-lime/20 hover:border-lime transition-all">
-                     <div className="w-16 h-16 rounded-full bg-white/5 border border-white/10 flex items-center justify-center mb-6 text-lime group-hover:scale-110 transition-transform">
-                        <Play size={24} fill="currentColor" />
-                     </div>
-                     <h3 className="text-2xl font-bold text-white mb-2">How it works</h3>
-                     <p className="text-sm text-white/40 max-w-xs mb-8 italic">Watch 2 min guide on generating legally binding documents in 50+ languages.</p>
-                     <button className="text-lime text-xs font-black uppercase tracking-widest flex items-center gap-2 group-hover:gap-4 transition-all">
-                        See Demo Section <ArrowRight size={14} />
-                     </button>
-                  </div>
-               </div>
-
-               <div className="mt-20 border-t border-gray-100 pt-20">
-                  <div className="flex items-center justify-between mb-12">
-                     <h2 className="text-3xl font-bold text-gray-900 heading-display">Your Recent <span className="italic">Studio Activity.</span></h2>
-                     <button className="text-xs font-black text-gray-400 uppercase tracking-widest underline decoration-lime decoration-2 underline-offset-4">View History Registry</button>
-                  </div>
-                  <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
-                     <DocumentCard title="Rental_Agreement_V4" type="Rental Agreement" status="Synced to Cloud" risk="Medium" />
-                     <DocumentCard title="Freelance_Contract_nyAI" type="Service Agreement" status="Verified by AI" risk="Low" />
-                     <DocumentCard title="Legal_Notice_Amazon" type="Consumer Dispute" status="Draft" risk="Draft" />
-                     <DocumentCard title="Copyright_Transfer" type="IP Law" status="Waitlisted" risk="Low" />
-                  </div>
-               </div>
+              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-8">
+                {[
+                  { title: 'Rental Agreement', icon: FileText, desc: 'Residential or Commercial leases' },
+                  { title: 'Legal Notice', icon: AlertTriangle, desc: 'Formal notice to individuals/orgs' },
+                  { title: 'ITR Reply', icon: ClipboardList, desc: 'Respond to Income Tax notices' },
+                  { title: 'Copyright Notice', icon: Scale, desc: 'Protect your creative work' },
+                  { title: 'NDA', icon: ShieldAlert, desc: 'Non-disclosure agreements' },
+                  { title: 'Employment Contract', icon: Layout, desc: 'For new hires or freelancers' },
+                ].map((doc, idx) => (
+                  <motion.div
+                    key={idx}
+                    whileHover={{ scale: 1.03 }}
+                    className="bg-white p-8 rounded-[2.5rem] border border-gray-100 shadow-xl group cursor-pointer hover:border-lime transition-all"
+                  >
+                    <div className="w-16 h-16 rounded-2xl bg-gray-50 flex items-center justify-center text-gray-400 mb-8 group-hover:bg-lime/20 group-hover:text-lime transition-all">
+                      <doc.icon size={32} />
+                    </div>
+                    <h3 className="text-2xl font-bold text-gray-900 mb-2">{doc.title}</h3>
+                    <p className="text-sm text-gray-500 mb-8">{doc.desc}</p>
+                    <button className="w-full py-4 border border-gray-100 rounded-xl text-xs font-black uppercase tracking-widest text-gray-400 group-hover:border-forest group-hover:text-forest transition-all flex items-center justify-center gap-3">
+                      Generate Draft <ArrowRight size={16} />
+                    </button>
+                  </motion.div>
+                ))}
+              </div>
             </motion.div>
           )}
         </AnimatePresence>
