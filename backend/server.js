@@ -662,11 +662,13 @@ The result must be a JSON object with this structure:
 
     // 3. Fallback
     if (!parsedData) {
+      let rawText = '';
       try {
         const { text } = await handleAIRequest(userPrompt, 2000);
+        rawText = text;
         parsedData = JSON.parse(text.replace(/```json|```/g, '').trim());
       } catch (e) {
-        const objMatch = (typeof text === 'string' ? text : '').match(/\{[\s\S]*\}/);
+        const objMatch = rawText.match(/\{[\s\S]*\}/);
         parsedData = objMatch ? JSON.parse(objMatch[0]) : null;
       }
     }
