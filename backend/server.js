@@ -579,52 +579,28 @@ app.post('/api/analyze-document', async (req, res) => {
     return res.status(400).json({ error: "Document text is required." });
   }
 
+  console.log(`[Analyzer] Processing document of length: ${documentText.length}`);
   const truncated = documentText.substring(0, 8000);
 
-  const systemPrompt = `You are an expert Indian legal contract analyst with 20+ years of experience. 
-You MUST analyze ANY document thoroughly and identify ALL risks — even subtle ones.
-Never say "no risks found" for a real document. Real documents always have issues.
-Your response must be ONLY a valid JSON object, no other text.`;
+  const systemPrompt = `You are an expert Indian legal contract analyst.
+Analyze the document and provide a structured review in JSON format.
+You MUST identify ALL risks and unfair clauses.
+Return ONLY a valid JSON object.`;
 
-  const userPrompt = `Analyze this document thoroughly as an Indian legal expert. Find ALL risks, vague clauses, missing protections, and unfair terms.
-
-Document Text:
+  const userPrompt = `Review this document and provide a JSON analysis:
 ---
 ${truncated}
 ---
-
-Return ONLY this JSON (no markdown, no extra text):
-{
-  "documentType": "Identify the specific type (e.g., Residential Rental Agreement, Employment Offer Letter, NDA, Sale Deed, etc.)",
-  "partyA": "First party name extracted from document (or 'Party A' if unclear)",  
-  "partyB": "Second party name extracted from document (or 'Party B' if unclear)",
-  "healthScore": <integer 0-100 where 100=perfectly fair, 0=extremely unfair/dangerous>,
-  "riskLevel": "<one of: Low | Medium | High | Critical>",
-  "summary": "2-3 sentence overall assessment of the document's fairness and legal risks under Indian law.",
-  "keyClauses": [
-    {"clause": "clause title", "text": "exact or paraphrased clause text", "status": "<Fair|Vague|Unfair|Missing>"}
-  ],
-  "riskFlags": [
-    {"type": "<Danger|Warning|Info>", "title": "short title", "desc": "specific explanation of what is wrong and why it's risky under Indian law", "recommendation": "what should be done to fix this"}
-  ],
-  "missingClauses": ["List important clauses that SHOULD be in this document type but are absent"],
-  "recommendations": ["Top 3-5 specific actionable recommendations for the weaker party"]
-}
-
-RULES:
-- Always find at least 2-3 risk flags in any real document
-- Be specific about which section/clause is problematic
-- Reference actual Indian laws (Consumer Protection Act, Transfer of Property Act, Indian Contract Act, etc.) where applicable
-- For vague amounts like 'n 20,000' — flag it as a data error/ambiguity
-- healthScore should reflect the OVERALL fairness to the weaker party`;
+The result must be a JSON object with: { "documentType": string, "partyA": string, "partyB": string, "healthScore": number, "riskLevel": string, "summary": string, "riskFlags": Array, "keyClauses": Array, "missingClauses": Array, "recommendations": Array }`;
 
   try {
     const PROVIDERS = getProviders();
     let parsedData = null;
 
-    // Try OpenAI with JSON mode first (guaranteed valid JSON)
+    // 1. Try OpenAI JSON mode
     if (PROVIDERS.OPENAI.key) {
       try {
+        console.log("[Analyzer] Attempting OpenAI...");
         const resp = await axios.post(PROVIDERS.OPENAI.url, {
           model: PROVIDERS.OPENAI.model,
           messages: [
@@ -641,16 +617,19 @@ RULES:
         });
         if (resp.status === 200) {
           parsedData = JSON.parse(resp.data.choices[0].message.content);
-          console.log("✅ Document analysis via OpenAI JSON mode (Axios)");
+          console.log("✅ [Analyzer] Success via OpenAI");
         }
       } catch (e) {
-        console.warn("OpenAI JSON mode failed for doc analysis:", e.message);
+        console.warn("⚠️ [Analyzer] OpenAI failed:", e.message, e.response?.data?.error || "");
       }
+    } else {
+      console.log("⏭️ [Analyzer] OpenAI key missing");
     }
 
-    // Fallback: Gemini with JSON mode
+    // 2. Try Gemini JSON mode
     if (!parsedData && PROVIDERS.GEMINI.key) {
       try {
+        console.log("[Analyzer] Attempting Gemini...");
         const url = `${PROVIDERS.GEMINI.url}/${PROVIDERS.GEMINI.model}:generateContent?key=${PROVIDERS.GEMINI.key}`;
         const resp = await axios.post(url, {
           contents: [{ parts: [{ text: `${systemPrompt}\n\n${userPrompt}` }] }],
@@ -658,29 +637,37 @@ RULES:
         });
         if (resp.status === 200) {
           parsedData = JSON.parse(resp.data.candidates[0].content.parts[0].text);
-          console.log("✅ Document analysis via Gemini JSON mode (Axios)");
+          console.log("✅ [Analyzer] Success via Gemini");
         }
       } catch (e) {
-        console.warn("Gemini JSON mode failed for doc analysis:", e.message);
+        console.warn("⚠️ [Analyzer] Gemini failed:", e.message);
       }
+    } else {
+      console.log("⏭️ [Analyzer] Gemini key missing");
     }
 
-    // Final fallback: generic dispatcher
+    // 3. Final fallback: Generic dispatcher
     if (!parsedData) {
-      const { text } = await handleAIRequest(userPrompt, 2000);
+      console.log("[Analyzer] Falling back to handleAIRequest...");
       try {
-        parsedData = JSON.parse(text.replace(/```json|```/g, '').trim());
+        const { text } = await handleAIRequest(userPrompt, 2000);
+        try {
+          parsedData = JSON.parse(text.replace(/```json|```/g, '').trim());
+        } catch (e) {
+          const objMatch = text.match(/\{[\s\S]*\}/);
+          parsedData = objMatch ? JSON.parse(objMatch[0]) : null;
+        }
+        if (parsedData) console.log("✅ [Analyzer] Success via Fallback Dispatcher");
       } catch (e) {
-        const objMatch = text.match(/\{[\s\S]*\}/);
-        parsedData = objMatch ? JSON.parse(objMatch[0]) : null;
+        console.error("❌ [Analyzer] All providers failed:", e.message);
       }
     }
 
     if (!parsedData) {
-      return res.status(500).json({ error: "Failed to parse AI analysis. Please try again." });
+      return res.status(500).json({ error: "Legal AI could not analyze this document. Please check your API keys or try a different format." });
     }
 
-    // Ensure required fields have defaults
+    // Ensure defaults
     parsedData.healthScore = parsedData.healthScore ?? 50;
     parsedData.riskLevel = parsedData.riskLevel ?? "Medium";
     parsedData.riskFlags = parsedData.riskFlags ?? [];
@@ -690,8 +677,8 @@ RULES:
 
     res.json(parsedData);
   } catch (err) {
-    console.error("Document Analyzer Error:", err);
-    res.status(500).json({ error: "Failed to analyze document." });
+    console.error("❌ Document Analyzer Runtime Error:", err);
+    res.status(500).json({ error: "An unexpected error occurred during analysis." });
   }
 });
 
