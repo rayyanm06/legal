@@ -598,7 +598,7 @@ The result must be a JSON object with this structure:
   "documentType": "String",
   "partyA": "String",
   "partyB": "String",
-  "healthScore": 0-100 (Be harsh!),
+  "healthScore": 0-100,
   "riskLevel": "Low|Medium|High|Critical",
   "summary": "1-2 sentences of the biggest dangers",
   "riskFlags": [
@@ -615,7 +615,7 @@ The result must be a JSON object with this structure:
     const PROVIDERS = getProviders();
     let parsedData = null;
 
-    // 1. Try OpenAI JSON mode
+    // 1. Try OpenAI JSON mode (Shark Mode)
     if (PROVIDERS.OPENAI.key) {
       try {
         console.log("[Analyzer] Attempting OpenAI (Shark Mode)...");
@@ -660,59 +660,62 @@ The result must be a JSON object with this structure:
       }
     }
 
-    // 3. Fallback
+    // 3. Fallback to generic dispatcher
     if (!parsedData) {
-      let rawText = '';
+      console.log("[Analyzer] Calling fallback dispatcher...");
       try {
         const { text } = await handleAIRequest(userPrompt, 2000);
-        rawText = text;
-        parsedData = JSON.parse(text.replace(/```json|```/g, '').trim());
+        try {
+          parsedData = JSON.parse(text.replace(/```json|```/g, '').trim());
+        } catch (e) {
+          const objMatch = (text || "").match(/\{[\s\S]*\}/);
+          parsedData = objMatch ? JSON.parse(objMatch[0]) : null;
+        }
       } catch (e) {
-        const objMatch = rawText.match(/\{[\s\S]*\}/);
-        parsedData = objMatch ? JSON.parse(objMatch[0]) : null;
+        console.error("❌ [Analyzer] Fallback failed:", e.message);
       }
     }
 
     if (!parsedData) {
-      return res.status(500).json({ error: "Shark AI is resting. Please try again." });
+      return res.status(500).json({ error: "Risk analysis engine is currently busy. Please try simplified text." });
     }
 
-    // --- SMART NORMALIZER ---
-    const findKey = (data, keywords) => {
-      const keys = Object.keys(data);
-      const found = keys.find(k => keywords.some(kw => k.toLowerCase().includes(kw)));
-      return found ? data[found] : null;
+    // --- AGGRESSIVE NORMALIZER ---
+    const extractArray = (data, keywords) => {
+      if (!data) return [];
+      const key = Object.keys(data).find(k => keywords.some(kw => k.toLowerCase().includes(kw)));
+      return Array.isArray(data[key]) ? data[key] : [];
     };
 
-    // Normalize Risks
-    const risks = findKey(parsedData, ['risk', 'issue', 'flag', 'danger', 'alert']) || [];
-    if (Array.isArray(risks) && risks.length > 0) parsedData.riskFlags = risks;
+    const risksFound = extractArray(parsedData, ['risk', 'issue', 'flag', 'danger', 'alert', 'point']);
+    const clausesFound = extractArray(parsedData, ['clause', 'section', 'text', 'point', 'item']);
 
-    // Normalize Clauses
-    const clauses = findKey(parsedData, ['clause', 'point', 'section', 'item']) || [];
-    if (Array.isArray(clauses) && clauses.length > 0) parsedData.keyClauses = clauses;
+    const finalResult = {
+      documentType: parsedData.documentType || 'Legal Document',
+      partyA: parsedData.partyA || 'Party A',
+      partyB: parsedData.partyB || 'Party B',
+      healthScore: parsedData.healthScore ?? 50,
+      riskLevel: parsedData.riskLevel || 'Medium',
+      summary: parsedData.summary || 'Summary not available.',
+      riskFlags: risksFound.map(f => ({
+        type: f.type || 'Warning',
+        title: f.title || f.issue || f.label || 'Risk Detected',
+        desc: f.desc || f.description || f.text || 'Potential legal concern.',
+        recommendation: f.recommendation || f.suggestion || f.fix || 'Review carefully.'
+      })),
+      keyClauses: clausesFound.map(c => ({
+        clause: c.clause || c.title || c.label || 'Clause',
+        text: c.text || c.content || c.excerpt || '',
+        status: c.status || 'Vague'
+      })),
+      missingClauses: Array.isArray(parsedData.missingClauses) ? parsedData.missingClauses : [],
+      recommendations: Array.isArray(parsedData.recommendations) ? parsedData.recommendations : []
+    };
 
-    // Final mapping for internal structure
-    parsedData.riskFlags = (parsedData.riskFlags || []).map(f => ({
-      type: f.type || 'Warning',
-      title: f.title || f.issue || f.label || 'Legal Risk',
-      desc: f.desc || f.description || f.text || '',
-      recommendation: f.recommendation || f.suggestion || f.fix || ''
-    }));
-
-    parsedData.keyClauses = (parsedData.keyClauses || []).map(c => ({
-      clause: c.clause || c.title || c.label || 'Clause',
-      text: c.text || c.content || c.excerpt || '',
-      status: c.status || 'Vague'
-    }));
-
-    parsedData.healthScore = parsedData.healthScore ?? 50;
-    parsedData.documentType = parsedData.documentType || 'Legal Document';
-
-    res.json(parsedData);
+    res.json(finalResult);
   } catch (err) {
-    console.error("❌ Shark Analyzer Error:", err);
-    res.status(500).json({ error: "An unexpected error occurred." });
+    console.error("❌ Fatal Analyzer Error:", err);
+    res.status(500).json({ error: "An unexpected error occurred in the analysis engine." });
   }
 });
 

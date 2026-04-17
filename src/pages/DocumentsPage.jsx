@@ -11,7 +11,7 @@ import GavelLoading from '../components/GavelLoading';
 import { API_ENDPOINTS } from '../api/config';
 import pdfjsWorkerUrl from 'pdfjs-dist/build/pdf.worker.min.mjs?url';
 import axios from 'axios';
-import { createWorker } from 'tesseract.js';
+// tesseract.js is now imported dynamically in the OCR block
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -37,6 +37,7 @@ async function extractTextFromFile(file) {
       // OCR Fallback for scanned documents
       if (fullText.trim().length < 50) {
         console.log('📄 Low text detected, attempting OCR...');
+        const { createWorker } = await import('tesseract.js');
         const worker = await createWorker('eng');
         for (let i = 1; i <= Math.min(pdf.numPages, 3); i++) { // Limit OCR to 3 pages for speed
           const page = await pdf.getPage(i);
@@ -451,8 +452,8 @@ const DocumentsPage = () => {
                           Risk Flags Detected ({(analysisResult?.riskFlags || []).length})
                         </h4>
                         {(analysisResult?.riskFlags || []).map((flag, i) => {
-                          const Icon = flagIcon[flag?.type] || Info;
-                          const color = flagColor[flag?.type] || flagColor.Info;
+                          const Icon = flagIcon[flag?.type] || Info || AlertCircle;
+                          const color = (flagColor && flagColor[flag?.type]) || (flagColor && flagColor.Info) || 'text-blue-500 bg-blue-50';
                           return (
                             <div key={i} className="bg-white border border-gray-100 rounded-2xl p-4 shadow-sm hover:shadow-md transition-all cursor-pointer">
                               <div className="flex gap-3">
@@ -462,15 +463,15 @@ const DocumentsPage = () => {
                                 <div className="flex-1 min-w-0">
                                   <div className="flex items-center gap-2 mb-1">
                                     <h5 className="text-sm font-bold text-gray-900 truncate">
-                                      {flag?.title || flag?.issue || 'Legal Risk'}
+                                      {flag?.title || "Legal Risk"}
                                     </h5>
                                     <span className={`text-[8px] font-black px-1.5 py-0.5 rounded uppercase flex-shrink-0 ${
                                       flag?.type === 'Danger' ? 'bg-red-500 text-white' :
                                       flag?.type === 'Warning' ? 'bg-amber-400 text-white' :
                                       'bg-blue-100 text-blue-700'
-                                    }`}>{flag?.type}</span>
+                                    }`}>{flag?.type || 'Info'}</span>
                                   </div>
-                                  <p className="text-xs text-gray-500 leading-relaxed">{flag?.desc}</p>
+                                  <p className="text-xs text-gray-500 leading-relaxed">{flag?.desc || 'Potential concern identified.'}</p>
                               {flag.recommendation && (
                                 <p className="text-xs text-forest font-semibold mt-1.5 flex items-start gap-1">
                                   <ChevronRight size={12} className="mt-0.5 flex-shrink-0" />
