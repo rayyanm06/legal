@@ -81,9 +81,24 @@ function withTimeout(promise, ms = 12000, label = '') {
 
 // ─── MONGODB CONNECTION ───
 const MONGO_URI = process.env.MONGO_URI || 'mongodb://localhost:27017/nyai';
+if (!process.env.MONGO_URI) {
+  console.warn('⚠️  MONGO_URI not found in environment variables. Defaulting to local MongoDB.');
+} else {
+  console.log('🔗 MONGO_URI is configured. Attempting connection...');
+}
+
 mongoose.connect(MONGO_URI)
-  .then(() => console.log('✅ Connected to MongoDB via Mongoose'))
-  .catch(err => console.error('❌ MongoDB Connection Error:', err));
+  .then(() => {
+    console.log('✅ Connected to MongoDB via Mongoose');
+    console.log(`📡 DB Host: ${mongoose.connection.host}`);
+    console.log(`📂 DB Name: ${mongoose.connection.name}`);
+  })
+  .catch(err => {
+    console.error('❌ MongoDB Connection Error:', err.message);
+    if (err.message.includes('ECONNREFUSED')) {
+      console.error('👉 Tip: Ensure your MongoDB server is running or MONGO_URI is correct.');
+    }
+  });
 
 // ─── AUTH MIDDLEWARE ───
 const protect = async (req, res, next) => {
@@ -703,10 +718,89 @@ Return EXACTLY this JSON structure (no markdown wrapping):
 }
 
 RULES:
-    parsedData.riskFlags = parsedData.riskFlags ?? [];
-    parsedData.keyClauses = parsedData.keyClauses ?? [];
-    parsedData.missingClauses = parsedData.missingClauses ?? [];
+- Always find at least 3 risk flags in any real document
+- Reference specific Indian laws (Indian Contract Act 1872, Transfer of Property Act, Consumer Protection Act 2019, etc.)
+- Flag vague monetary amounts, missing dates, unclear termination clauses
+- healthScore reflects fairness to the weaker party (0=very unfair, 100=perfectly balanced)`;
+
+  try {
+    const PROVIDERS = getProviders();
+    let parsedData = null;
+
+    // 1. Try OpenAI with JSON mode first (guaranteed valid JSON)
+    if (PROVIDERS.OPENAI.key) {
+      try {
+        const resp = await fetch(PROVIDERS.OPENAI.url, {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            "Authorization": `Bearer ${PROVIDERS.OPENAI.key}`
+          },
+          body: JSON.stringify({
+            model: PROVIDERS.OPENAI.model,
+            messages: [
+              { role: "system", content: systemPrompt },
+              { role: "user", content: userPrompt }
+            ],
+            max_tokens: 2000,
+            response_format: { type: "json_object" }
+          })
+        });
+        if (resp.ok) {
+          const data = await resp.json();
+          parsedData = JSON.parse(data.choices[0].message.content);
+          console.log("✅ Document analysis via OpenAI JSON mode");
+        }
+      } catch (e) {
+        console.warn("OpenAI JSON mode failed for doc analysis:", e.message);
+      }
+    }
+
+    // 2. Fallback: Gemini with JSON mode
+    if (!parsedData && PROVIDERS.GEMINI.key) {
+      try {
+        const url = `${PROVIDERS.GEMINI.url}/${PROVIDERS.GEMINI.model}:generateContent?key=${PROVIDERS.GEMINI.key}`;
+        const resp = await fetch(url, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            contents: [{ parts: [{ text: `${systemPrompt}\n\n${userPrompt}` }] }],
+            generationConfig: { maxOutputTokens: 2000, responseMimeType: "application/json" }
+          })
+        });
+        if (resp.ok) {
+          const data = await resp.json();
+          parsedData = JSON.parse(data.candidates[0].content.parts[0].text);
+          console.log("✅ Document analysis via Gemini JSON mode");
+        }
+      } catch (e) {
+        console.warn("Gemini JSON mode failed for doc analysis:", e.message);
+      }
+    }
+
+    // 3. Final fallback: generic dispatcher
+    if (!parsedData) {
+      const { text: resultText } = await handleAIRequest(userPrompt, 2000);
+      try {
+        parsedData = JSON.parse(resultText.replace(/```json|```/g, '').trim());
+      } catch (e) {
+        const objMatch = resultText.match(/\{[\s\S]*\}/);
+        parsedData = objMatch ? JSON.parse(objMatch[0]) : null;
+      }
+    }
+
+    if (!parsedData) {
+      return res.status(500).json({ error: "Failed to parse AI analysis. Please try again." });
+    }
+
+    // Ensure required fields have defaults
+    parsedData.healthScore     = parsedData.healthScore     ?? 50;
+    parsedData.riskLevel       = parsedData.riskLevel       ?? 'Medium';
+    parsedData.riskFlags       = parsedData.riskFlags       ?? [];
+    parsedData.keyClauses      = parsedData.keyClauses      ?? [];
+    parsedData.missingClauses  = parsedData.missingClauses  ?? [];
     parsedData.recommendations = parsedData.recommendations ?? [];
+    parsedData.extractedText   = truncated;
 
     res.json(parsedData);
   } catch (err) {
