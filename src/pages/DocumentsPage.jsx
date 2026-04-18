@@ -23,7 +23,10 @@ const extractText = (file) => {
 };
 
 const extractPDFText = async (file) => {
-  if (typeof window !== 'undefined' && window.pdfjsLib && !window.pdfjsLib.GlobalWorkerOptions.workerSrc) {
+  if (typeof window === 'undefined' || !window.pdfjsLib) {
+    throw new Error("PDF parser is blocked by browser privacy shields. Please disable trackers for this site, or convert to .txt.");
+  }
+  if (!window.pdfjsLib.GlobalWorkerOptions.workerSrc) {
     window.pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
   }
   const arrayBuffer = await file.arrayBuffer();
@@ -39,6 +42,9 @@ const extractPDFText = async (file) => {
 };
 
 const extractDocxText = async (file) => {
+  if (typeof window === 'undefined' || !window.mammoth) {
+    throw new Error("Document parser is blocked by browser privacy shields. Please convert to PDF or .txt.");
+  }
   const arrayBuffer = await file.arrayBuffer();
   const result = await window.mammoth.extractRawText({ arrayBuffer });
   return result.value;
@@ -410,42 +416,42 @@ const DocumentsPage = () => {
                             </div>
                             
                             {/* Risk Flags */}
-                            {analysisResult.riskFlags && analysisResult.riskFlags.length > 0 ? (
+                            {Array.isArray(analysisResult.riskFlags) && analysisResult.riskFlags.length > 0 ? (
                               <div className="space-y-4 mt-6">
                                 <h3 className="text-lg font-black text-gray-900 flex items-center gap-2">
                                   <AlertTriangle size={20} className="text-orange-500"/> Detected Risks ({analysisResult.riskFlags.length})
                                 </h3>
                                 {analysisResult.riskFlags.map((flag, idx) => (
                                   <div key={idx} className={`bg-white rounded-2xl p-5 border shadow-sm ${
-                                    flag.severity === 'Critical' ? 'border-red-300' :
-                                    flag.severity === 'High' ? 'border-orange-300' :
-                                    flag.severity === 'Medium' ? 'border-amber-300' : 'border-blue-200'
+                                    flag?.severity === 'Critical' ? 'border-red-300' :
+                                    flag?.severity === 'High' ? 'border-orange-300' :
+                                    flag?.severity === 'Medium' ? 'border-amber-300' : 'border-blue-200'
                                   }`}>
                                     <div className="flex justify-between items-start mb-3">
-                                      <h4 className="font-bold text-gray-900 text-lg">{flag.title}</h4>
+                                      <h4 className="font-bold text-gray-900 text-lg">{flag?.title || 'Risk Flag'}</h4>
                                       <span className={`px-3 py-1 text-[10px] font-black uppercase tracking-widest rounded-full ${
-                                        flag.severity === 'Critical' ? 'bg-red-100 text-red-700' :
-                                        flag.severity === 'High' ? 'bg-orange-100 text-orange-700' :
-                                        flag.severity === 'Medium' ? 'bg-amber-100 text-amber-700' : 'bg-blue-100 text-blue-700'
+                                        flag?.severity === 'Critical' ? 'bg-red-100 text-red-700' :
+                                        flag?.severity === 'High' ? 'bg-orange-100 text-orange-700' :
+                                        flag?.severity === 'Medium' ? 'bg-amber-100 text-amber-700' : 'bg-blue-100 text-blue-700'
                                       }`}>
-                                        {flag.severity} RISK
+                                        {flag?.severity || 'Low'} RISK
                                       </span>
                                     </div>
-                                    <p className="text-sm text-gray-600 leading-relaxed mb-4">{flag.description}</p>
+                                    <p className="text-sm text-gray-600 leading-relaxed mb-4">{flag?.description || ''}</p>
                                     
-                                    {flag.exactText && flag.exactText !== "null" && (
+                                    {flag?.exactText && flag?.exactText !== "null" && (
                                       <div className="bg-[#fef9c3] border-l-4 border-amber-400 p-4 rounded-r-lg mb-4 text-xs font-mono text-gray-700 shadow-sm">
                                         <p className="text-[10px] font-bold text-amber-800 uppercase tracking-widest mb-2 shadow-none">📄 From your document:</p>
-                                        "{flag.exactText}"
+                                        "{flag?.exactText}"
                                       </div>
                                     )}
 
-                                    {flag.recommendation && (
+                                    {flag?.recommendation && flag?.recommendation !== "null" && (
                                       <div className="bg-[#f0fdf4] border border-green-200 p-4 rounded-lg text-sm text-green-800 flex items-start gap-3 shadow-sm">
                                         <Sparkles size={16} className="text-green-600 flex-shrink-0 mt-0.5" />
                                         <div>
                                           <p className="text-[10px] font-black uppercase tracking-widest text-green-600 mb-1">💡 What to do:</p>
-                                          {flag.recommendation}
+                                          {flag?.recommendation}
                                         </div>
                                       </div>
                                     )}
@@ -461,7 +467,7 @@ const DocumentsPage = () => {
                             )}
 
                             {/* Positive Findings */}
-                            {analysisResult.positiveFindings && analysisResult.positiveFindings.length > 0 && (
+                            {Array.isArray(analysisResult.positiveFindings) && analysisResult.positiveFindings.length > 0 && (
                               <div className="mt-8 border border-gray-200 rounded-2xl overflow-hidden">
                                 <button 
                                   onClick={() => setPositiveExpanded(!positiveExpanded)}
@@ -479,7 +485,7 @@ const DocumentsPage = () => {
                                       {analysisResult.positiveFindings.map((finding, idx) => (
                                         <li key={idx} className="flex items-start gap-3 text-sm text-gray-600 leading-relaxed font-medium">
                                           <CheckCircle2 size={16} className="text-green-500 flex-shrink-0 mt-0.5" />
-                                          {finding}
+                                          {typeof finding === 'string' ? finding : JSON.stringify(finding)}
                                         </li>
                                       ))}
                                     </ul>
